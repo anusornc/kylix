@@ -3,8 +3,7 @@ defmodule KylixTest do
   doctest Kylix
 
   setup do
-    # Instead of directly deleting the tables, restart the application
-    # which will properly clean up and recreate the ETS tables
+    # Stop and restart the application with a clean slate
     :ok = Application.stop(:kylix)
     {:ok, _} = Application.ensure_all_started(:kylix)
 
@@ -25,7 +24,6 @@ defmodule KylixTest do
   test "query transactions" do
     assert {:ok, _tx_id1} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", "valid_sig")
     Process.sleep(10)
-    :ok = Kylix.BlockchainServer.reset_tx_count(1)
     assert {:ok, _tx_id2} = Kylix.add_transaction("subject2", "predicate1", "object2", "agent2", "valid_sig")
     Process.sleep(10)
     {:ok, results} = Kylix.query({nil, "predicate1", nil})
@@ -33,10 +31,9 @@ defmodule KylixTest do
   end
 
   test "query transactions with validator rotation" do
-    assert {:ok, _tx_id1} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", "valid_sig")
+    assert {:ok, tx_id1} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", "valid_sig")
     Process.sleep(10)
-    :ok = Kylix.BlockchainServer.reset_tx_count(1)
-    assert {:ok, _tx_id2} = Kylix.add_transaction("subject2", "predicate1", "object2", "agent2", "valid_sig")
+    assert {:ok, tx_id2} = Kylix.add_transaction("subject2", "predicate1", "object2", "agent2", "valid_sig")
     Process.sleep(10)
     {:ok, results} = Kylix.query({nil, "predicate1", nil})
     assert length(results) == 2
