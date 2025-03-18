@@ -2,16 +2,28 @@ defmodule Kylix.Application do
   use Application
 
   def start(_type, _args) do
-    validators = [
-      "agent1",
-      "agent2",
-      "agent3"
-    ]
+    # Get config values
+    db_path = Application.get_env(:kylix, :db_path, "data/dag_storage")
+    port = Application.get_env(:kylix, :port, 4040)
+    node_id = Application.get_env(:kylix, :node_id, "kylix-node")
+    validators_dir = Application.get_env(:kylix, :validators_dir, "config/validators")
+
+    # Create required directories
+    File.mkdir_p!(db_path)
+
+    # Load validators
+    validators =
+      validators_dir
+      |> File.ls!()
+      |> Enum.filter(&String.ends_with?(&1, ".pub"))
+      |> Enum.map(&Path.rootname/1)
+
     children = [
-      {Kylix.Storage.DAGEngine, []},
-      {Kylix.BlockchainServer, [validators: validators]}
+      {Kylix.Storage.PersistentDAGEngine, [db_path: db_path]},
+      {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},
+      {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]}
     ]
-    # Change strategy to :rest_for_one
+
     opts = [strategy: :rest_for_one, name: Kylix.Supervisor]
     Supervisor.start_link(children, opts)
   end

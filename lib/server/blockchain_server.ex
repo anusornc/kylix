@@ -1,19 +1,55 @@
 defmodule Kylix.BlockchainServer do
   use GenServer
+  require Logger
+
+  @config_dir "config/validators"
 
   # Start the Blockchain Server with given options
   # The server will manage transactions and validator information
   @spec start_link(keyword()) :: {:ok, pid()} | {:error, term()}
   def start_link(opts \\ []) do
-    validators = Keyword.get(opts, :validators, ["agent1", "agent2"])
-    GenServer.start_link(__MODULE__, [validators: validators], name: __MODULE__)
+    validators = Keyword.get(opts, :validators, [])
+    config_dir = Keyword.get(opts, :config_dir, @config_dir)
+
+    GenServer.start_link(__MODULE__, [validators: validators, config_dir: config_dir],
+      name: __MODULE__
+    )
+  end
+
+  def receive_transaction(tx_data) do
+    GenServer.cast(__MODULE__, {:receive_transaction, tx_data})
+  end
+
+  @impl true
+  def handle_cast({:receive_transaction, tx_data}, state) do
+    # Process received transaction from another validator
+    # This should validate and potentially add to the chain
+    Logger.info("Received transaction from network: #{inspect(tx_data)}")
+
+    # Extract transaction data
+    s = tx_data["subject"]
+    p = tx_data["predicate"]
+    o = tx_data["object"]
+    validator_id = tx_data["validator"]
+    signature = tx_data["signature"]
+
+    # Forward to regular processing
+    case add_transaction(s, p, o, validator_id, signature) do
+      {:ok, tx_id} ->
+        Logger.info("Transaction from network added as #{tx_id}")
+
+      {:error, reason} ->
+        Logger.warning("Failed to add network transaction: #{reason}")
+    end
+
+    {:noreply, state}
   end
 
   # Add a new transaction to the blockchain with the given subject, predicate, object
   # Requires a valid validator_id and signature to be accepted
   # Returns {:ok, tx_id} if successful or an error tuple
   @spec add_transaction(any(), any(), any(), String.t(), String.t()) ::
-        {:ok, String.t()} | {:error, atom()}
+          {:ok, String.t()} | {:error, atom()}
   def add_transaction(s, p, o, validator_id, signature) do
     GenServer.call(__MODULE__, {:add_transaction, s, p, o, validator_id, signature})
   end
@@ -39,7 +75,7 @@ defmodule Kylix.BlockchainServer do
   # known_by: existing validator that vouches for the new one
   # Returns {:ok, validator_id} if successful or an error tuple
   @spec add_validator(String.t(), String.t(), String.t()) ::
-        {:ok, String.t()} | {:error, atom()}
+          {:ok, String.t()} | {:error, atom()}
   def add_validator(validator_id, pubkey, known_by) do
     GenServer.call(__MODULE__, {:add_validator, validator_id, pubkey, known_by})
   end
@@ -54,42 +90,91 @@ defmodule Kylix.BlockchainServer do
   # Initialize the server state with transaction count and validators
   @impl true
   def init(opts) do
-    validators = Keyword.get(opts, :validators, ["agent1", "agent2"])
-    {:ok, %{tx_count: 0, validators: validators}}
+    validators = Keyword.get(opts, :validators, [])
+    config_dir = Keyword.get(opts, :config_dir, @config_dir)
+
+    # Ensure config directory exists
+    File.mkdir_p!(config_dir)
+
+    # Load validator public keys
+    public_keys = Kylix.Auth.SignatureVerifier.load_public_keys(config_dir)
+
+    # Initialize state
+    {:ok,
+     %{
+       tx_count: 0,
+       validators: validators,
+       public_keys: public_keys,
+       last_block_time: DateTime.utc_now()
+     }}
   end
 
   # Handle transaction addition request
   # Validates the requesting validator and adds the transaction to the DAG
   @impl true
   def handle_call({:add_transaction, s, p, o, validator_id, signature}, _from, state) do
-    current_validator = Enum.at(state.validators, rem(state.tx_count, length(state.validators)))
+    # First, check if validator exists
     case Enum.find(state.validators, fn v -> v == validator_id end) do
       nil ->
-        # Validator is not recognized
         {:reply, {:error, :unknown_validator}, state}
-      ^current_validator ->
-        # Valid validator and it's their turn
-        tx_id = "tx#{state.tx_count + 1}"
-        tx_data = %{
-          subject: s,
-          predicate: p,
-          object: o,
-          validator: validator_id,
-          signature: signature,
-          timestamp: DateTime.utc_now()
-        }
-        :ok = Kylix.Storage.DAGEngine.add_node(tx_id, tx_data)
 
-        # Link to previous transaction if not the first one
-        if state.tx_count > 0 do
-          :ok = Kylix.Storage.DAGEngine.add_edge(tx_id, "tx#{state.tx_count}", "confirms")
-        end
-
-        new_state = %{state | tx_count: state.tx_count + 1}
-        {:reply, {:ok, tx_id}, new_state}
       _ ->
-        # Valid validator but not their turn
-        {:reply, {:error, :not_your_turn}, state}
+        # Check if it's this validator's turn
+        current_validator =
+          Enum.at(state.validators, rem(state.tx_count, length(state.validators)))
+
+        if current_validator == validator_id do
+          # Create timestamp
+          timestamp = DateTime.utc_now()
+
+          # Verify signature
+          tx_hash =
+            Kylix.Auth.SignatureVerifier.hash_transaction(s, p, o, validator_id, timestamp)
+
+          public_key = Map.get(state.public_keys, validator_id)
+
+          case Kylix.Auth.SignatureVerifier.verify(tx_hash, signature, public_key) do
+            :ok ->
+              # Signature valid, proceed with transaction
+              tx_id = "tx#{state.tx_count + 1}"
+
+              tx_data = %{
+                subject: s,
+                predicate: p,
+                object: o,
+                validator: validator_id,
+                signature: signature,
+                timestamp: timestamp,
+                hash: Base.encode16(tx_hash)
+              }
+
+              # Add to persistent storage
+              :ok = Kylix.Storage.PersistentDAGEngine.add_node(tx_id, tx_data)
+
+              # Link to previous transaction
+              if state.tx_count > 0 do
+                :ok =
+                  Kylix.Storage.PersistentDAGEngine.add_edge(
+                    tx_id,
+                    "tx#{state.tx_count}",
+                    "confirms"
+                  )
+              end
+
+              # Update state
+              new_state = %{state | tx_count: state.tx_count + 1, last_block_time: timestamp}
+
+              {:reply, {:ok, tx_id}, new_state}
+
+            {:error, reason} ->
+              # Invalid signature
+              Logger.warning("Invalid signature from validator #{validator_id}: #{reason}")
+              {:reply, {:error, :invalid_signature}, state}
+          end
+        else
+          # Not this validator's turn
+          {:reply, {:error, :not_your_turn}, state}
+        end
     end
   end
 
@@ -114,6 +199,7 @@ defmodule Kylix.BlockchainServer do
       nil ->
         # The vouching validator doesn't exist
         {:reply, {:error, :unknown_validator}, state}
+
       _ ->
         # Add the new validator to the list
         new_validators = [validator_id | state.validators]
