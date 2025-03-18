@@ -3,9 +3,9 @@ defmodule Kylix.Application do
 
   def start(_type, _args) do
     validators = [
-      {"agent1", "pubkey1"},
-      {"agent2", "pubkey2"},
-      {"agent3", "pubkey3"}
+      "agent1",
+      "agent2",
+      "agent3"
     ]
     children = [
       {Kylix.Storage.DAGEngine, []},

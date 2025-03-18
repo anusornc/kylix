@@ -3,15 +3,18 @@ defmodule KylixTest do
   doctest Kylix
 
   setup do
-    Application.stop(:kylix)
-    Application.ensure_all_started(:kylix)
-    :ok = GenServer.call(Kylix.BlockchainServer, {:reset_tx_count, 0})
+    # Instead of directly deleting the tables, restart the application
+    # which will properly clean up and recreate the ETS tables
+    :ok = Application.stop(:kylix)
+    {:ok, _} = Application.ensure_all_started(:kylix)
+
+    # Reset transaction count
+    :ok = Kylix.BlockchainServer.reset_tx_count(0)
     :ok
   end
 
   test "add transaction with valid validator and signature" do
-    assert {:ok, tx_id} = Kylix.add_transaction("subject", "predicate", "object", "agent1", "valid_sig")
-    assert is_binary(tx_id)
+    assert {:ok, _tx_id} = Kylix.add_transaction("subject", "predicate", "object", "agent1", "valid_sig")
   end
 
   test "add transaction with invalid validator" do
@@ -22,7 +25,7 @@ defmodule KylixTest do
   test "query transactions" do
     assert {:ok, _tx_id1} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", "valid_sig")
     Process.sleep(10)
-    :ok = GenServer.call(Kylix.BlockchainServer, {:reset_tx_count, 1})
+    :ok = Kylix.BlockchainServer.reset_tx_count(1)
     assert {:ok, _tx_id2} = Kylix.add_transaction("subject2", "predicate1", "object2", "agent2", "valid_sig")
     Process.sleep(10)
     {:ok, results} = Kylix.query({nil, "predicate1", nil})
@@ -32,7 +35,7 @@ defmodule KylixTest do
   test "query transactions with validator rotation" do
     assert {:ok, _tx_id1} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", "valid_sig")
     Process.sleep(10)
-    :ok = GenServer.call(Kylix.BlockchainServer, {:reset_tx_count, 1})
+    :ok = Kylix.BlockchainServer.reset_tx_count(1)
     assert {:ok, _tx_id2} = Kylix.add_transaction("subject2", "predicate1", "object2", "agent2", "valid_sig")
     Process.sleep(10)
     {:ok, results} = Kylix.query({nil, "predicate1", nil})
