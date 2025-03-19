@@ -1,4 +1,4 @@
-defmodule Kylix.Integration.KylixIntegrationTest do
+defmodule Kylix.Integration.NetworkIntegrationTest do
   use ExUnit.Case
 
   # Import required modules for testing

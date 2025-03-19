@@ -4,7 +4,7 @@ defmodule Kylix.Integration.KylixIntegrationTest do
   # Import required modules for testing
   alias Kylix.Storage.DAGEngine
   alias Kylix.BlockchainServer
-  alias Kylix.Network.ValidatorNetwork
+ 
   # We'll create our own mock SparqlEngine in the test
   alias Kylix.Auth.SignatureVerifier
 
