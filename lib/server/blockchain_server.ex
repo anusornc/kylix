@@ -24,7 +24,6 @@ defmodule Kylix.BlockchainServer do
   @impl true
   def handle_cast({:receive_transaction, tx_data}, state) do
     # Process received transaction from another validator
-    # This should validate and potentially add to the chain
     Logger.info("Received transaction from network: #{inspect(tx_data)}")
 
     # Extract transaction data
@@ -34,16 +33,17 @@ defmodule Kylix.BlockchainServer do
     validator_id = tx_data["validator"]
     signature = tx_data["signature"]
 
-    # Forward to regular processing
-    case add_transaction(s, p, o, validator_id, signature) do
+    # Process internally without making a GenServer call to self
+    {result, new_state} = do_add_transaction(s, p, o, validator_id, signature, state)
+
+    case result do
       {:ok, tx_id} ->
         Logger.info("Transaction from network added as #{tx_id}")
-
+        {:noreply, new_state}
       {:error, reason} ->
         Logger.warning("Failed to add network transaction: #{reason}")
+        {:noreply, state}
     end
-
-    {:noreply, state}
   end
 
   # Add a new transaction to the blockchain with the given subject, predicate, object
@@ -118,14 +118,15 @@ defmodule Kylix.BlockchainServer do
      }}
   end
 
-  # Handle transaction addition request
-  # Validates the requesting validator and adds the transaction to the DAG
-  @impl true
-  def handle_call({:add_transaction, s, p, o, validator_id, signature}, _from, state) do
+
+
+  # Shared implementation for adding transactions
+  # Used by both handle_call and handle_cast to avoid recursive calls
+  defp do_add_transaction(s, p, o, validator_id, signature, state) do
     # First, check if validator exists
     case Enum.find(state.validators, fn v -> v == validator_id end) do
       nil ->
-        {:reply, {:error, :unknown_validator}, state}
+        {{:error, :unknown_validator}, state}
 
       _ ->
         # Special case for test environment - don't check validator turns
@@ -158,7 +159,7 @@ defmodule Kylix.BlockchainServer do
 
           # Update state
           new_state = %{state | tx_count: state.tx_count + 1, last_block_time: timestamp}
-          {:reply, {:ok, tx_id}, new_state}
+          {{:ok, tx_id}, new_state}
         else
           # Production behavior - check turns, verify signatures, etc.
           # Check if it's this validator's turn
@@ -198,21 +199,29 @@ defmodule Kylix.BlockchainServer do
 
                 # Update state
                 new_state = %{state | tx_count: state.tx_count + 1, last_block_time: timestamp}
-                {:reply, {:ok, tx_id}, new_state}
+                {{:ok, tx_id}, new_state}
 
               {:error, reason} ->
                 # Invalid signature
                 Logger.warning("Invalid signature from validator #{validator_id}: #{reason}")
-                {:reply, {:error, :invalid_signature}, state}
+                {{:error, :invalid_signature}, state}
             end
           else
             # Not this validator's turn
-            {:reply, {:error, :not_your_turn}, state}
+            {{:error, :not_your_turn}, state}
           end
         end
     end
   end
 
+  # Handle transaction addition request
+  # Validates the requesting validator and adds the transaction to the DAG
+  @impl true
+  def handle_call({:add_transaction, s, p, o, validator_id, signature}, _from, state) do
+    {result, new_state} = do_add_transaction(s, p, o, validator_id, signature, state)
+    {:reply, result, new_state}
+  end
+  
   # Handle query request
   # Forwards the query to the DAG Engine and returns results
   @impl true
