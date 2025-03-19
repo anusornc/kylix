@@ -5,8 +5,8 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
   @test_db_path "test/tmp/dag_test_db"
 
   setup do
-    # Reset the application for a clean state
-    :ok = Application.stop(:kylix)
+    # Stop the application if it's running, ignore error if it's not
+    Application.stop(:kylix)
 
     # Clean up the test database directory
     File.rm_rf!(@test_db_path)
@@ -15,19 +15,27 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
     # Set test database path in application environment
     Application.put_env(:kylix, :db_path, @test_db_path)
 
-    # Restart the application with our test config
+    # Start the application, which should now use our test DB path
     {:ok, _} = Application.ensure_all_started(:kylix)
 
-    # Verify the PersistentDAGEngine is running
-    pid = Process.whereis(PersistentDAGEngine)
-    assert is_pid(pid) and Process.alive?(pid)
+    # We still need to manually start the PersistentDAGEngine for these tests
+    # since the application normally uses DAGEngine in test mode
+    {:ok, pid} = PersistentDAGEngine.start_link(db_path: @test_db_path)
+
+    # Register the process with its expected name if not already registered
+    unless Process.whereis(PersistentDAGEngine) do
+      Process.register(pid, PersistentDAGEngine)
+    end
 
     # Clean up after the test
     on_exit(fn ->
+      if Process.alive?(pid) do
+        GenServer.stop(pid)
+      end
       File.rm_rf!(@test_db_path)
     end)
 
-    :ok
+    {:ok, %{pid: pid}}
   end
 
   describe "node operations" do
@@ -131,8 +139,8 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       {_, _, edges} = source_node
 
       # Verify edge exists in query results
-      assert Enum.any?(edges, fn {from, to, label} ->
-        from == "source" && to == "target" && label == "connects"
+      assert Enum.any?(edges, fn {to, label} ->
+        to == "target" && label == "connects"
       end)
     end
 
@@ -165,8 +173,8 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       # Find edges in the results
       edge_found = Enum.any?(results, fn {id, _, edges} ->
         id == "source" &&
-        Enum.any?(edges, fn {from, to, label} ->
-          from == "source" && to == "target" && label == "connects"
+        Enum.any?(edges, fn {to, label} ->
+          to == "target" && label == "connects"
         end)
       end)
 
@@ -251,8 +259,8 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       {_, _, edges} = tx1_result
 
       # Verify the edge from tx1 to tx2 exists
-      assert Enum.any?(edges, fn {from, to, label} ->
-        from == "tx1" && to == "tx2" && label == "same_subject"
+      assert Enum.any?(edges, fn {to, label} ->
+        to == "tx2" && label == "same_subject"
       end)
     end
   end
