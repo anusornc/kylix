@@ -32,7 +32,8 @@ defmodule Kylix.MixProject do
       {:telemetry_metrics, "~> 0.6"},
       {:credo, "~> 1.7", only: [:dev, :test]},
       {:dialyxir, "~> 1.3", only: [:dev], runtime: false},
-      {:ex_doc, "~> 0.29", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.29", only: :dev, runtime: false},
+      {:meck, "~> 1.0.0", only: :test}
     ]
   end
 end
