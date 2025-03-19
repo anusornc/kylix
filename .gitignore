@@ -1,25 +1,56 @@
-# The directory Mix will write compiled artifacts to.
+# Elixir build artifacts
 /_build/
-
-# If you run "mix test --cover", coverage assets end up here.
 /cover/
-
-# The directory Mix downloads your dependencies sources to.
 /deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+*.beam
+/config/*.secret.exs
+.elixir_ls/
 
-# Where third-party dependencies like ExDoc output generated docs.
+# Kylix-specific directories
+/data/
+/data/dag_storage/
+/data/dev/
+/data/test/
+
+# Validator keys and configuration files
+/config/validators/*.pub
+/config/validators/*.key
+/config/validators/*.pem
+
+# Test temporary files
+/test/tmp/
+
+# Log files
+/log/
+*.log
+
+# IDE and editor files
+/.idea/
+/.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*~
+.DS_Store
+
+# Language server and static analysis
+.lsp/
+.clj-kondo/
+.credo.exs
+
+# Environment specific configuration
+.env
+.env.*
+
+# Generated documentation
 /doc/
 
-# If the VM crashes, it generates a dump, let's ignore it too.
-erl_crash.dump
+# Release builds
+/rel/
 
-# Also ignore archive artifacts (built via "mix archive.build").
-*.ez
-
-# Ignore package tarball (built via "mix hex.build").
-kylix-*.tar
-
-# Temporary files, for example, from tests.
-/tmp/
-/config/validators/
-/data/
+# Crash reports
+crash_dump.*
