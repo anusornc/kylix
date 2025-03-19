@@ -31,9 +31,9 @@ defmodule KylixTest do
   end
 
   test "query transactions with validator rotation" do
-    assert {:ok, tx_id1} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", "valid_sig")
+    assert {:ok, _tx_id1} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", "valid_sig")
     Process.sleep(10)
-    assert {:ok, tx_id2} = Kylix.add_transaction("subject2", "predicate1", "object2", "agent2", "valid_sig")
+    assert {:ok, _tx_id2} = Kylix.add_transaction("subject2", "predicate1", "object2", "agent2", "valid_sig")
     Process.sleep(10)
     {:ok, results} = Kylix.query({nil, "predicate1", nil})
     assert length(results) == 2

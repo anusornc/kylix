@@ -16,21 +16,6 @@ defmodule Kylix.Network.ValidatorNetwork do
     GenServer.start_link(__MODULE__, [port: port, node_id: node_id], name: __MODULE__)
   end
 
-  # Broadcast a transaction to other validators
-  def broadcast_transaction(tx_data) do
-    GenServer.cast(__MODULE__, {:broadcast, :transaction, tx_data})
-  end
-
-  # Connect to another validator
-  def connect(host, port) do
-    GenServer.call(__MODULE__, {:connect, host, port})
-  end
-
-  # Get list of connected validators
-  def get_peers() do
-    GenServer.call(__MODULE__, :get_peers)
-  end
-
   @impl true
   def init(opts) do
     port = Keyword.get(opts, :port, @default_port)
@@ -57,6 +42,118 @@ defmodule Kylix.Network.ValidatorNetwork do
       peer_latencies: %{} # Map of node_id to latency measurements
     }}
   end
+
+  # Broadcast a transaction to other validators
+  def broadcast_transaction(tx_data) do
+    GenServer.cast(__MODULE__, {:broadcast, :transaction, tx_data})
+  end
+
+  # Connect to another validator
+  def connect(host, port) do
+    GenServer.call(__MODULE__, {:connect, host, port})
+  end
+
+  # Get list of connected validators
+  def get_peers() do
+    GenServer.call(__MODULE__, :get_peers)
+  end
+
+  # Monitor an active connection
+  defp monitor_connection(socket, peer_id) do
+    # Set socket to active mode for this process
+    :inet.setopts(socket, [active: true])
+
+    # Periodically send pings to measure latency
+    schedule_ping(socket, peer_id)
+
+    receive do
+      {:tcp, ^socket, data} ->
+        # Process message
+        GenServer.cast(__MODULE__, {:message, peer_id, data})
+        monitor_connection(socket, peer_id)
+
+      {:tcp_closed, ^socket} ->
+        Logger.info("Connection to #{peer_id} closed")
+        GenServer.cast(__MODULE__, {:connection_closed, peer_id})
+
+      {:tcp_error, ^socket, reason} ->
+        Logger.error("Connection error with #{peer_id}: #{reason}")
+        GenServer.cast(__MODULE__, {:connection_closed, peer_id})
+
+      :ping_time ->
+        send_ping(socket, peer_id)
+        schedule_ping(socket, peer_id)
+        monitor_connection(socket, peer_id)
+    end
+  end
+
+  defp schedule_ping(_socket, _peer_id) do
+    # Send a ping every 30 seconds
+    Process.send_after(self(), :ping_time, 30_000)
+  end
+
+  defp send_ping(socket, _peer_id) do
+    ping = Jason.encode!(%{
+      type: "ping",
+      node_id: node_name(),
+      timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+    })
+    :gen_tcp.send(socket, ping <> "\n")
+  end
+
+  defp measure_latency(socket) do
+    # Send ping and measure time until pong
+    start_time = System.monotonic_time(:millisecond)
+    send_ping(socket, nil)
+
+    # Wait for pong
+    case :gen_tcp.recv(socket, 0, 5000) do
+      {:ok, data} ->
+        response = Jason.decode!(data)
+        if response["type"] == "pong" do
+          end_time = System.monotonic_time(:millisecond)
+          end_time - start_time
+        else
+          1000 # Assume high latency if wrong response
+        end
+
+      {:error, _} ->
+        2000 # Assume very high latency on timeout
+    end
+  end
+
+  defp calculate_latency({:ok, timestamp, _offset}) do
+    current_time = DateTime.utc_now()
+    DateTime.diff(current_time, timestamp, :millisecond)
+  end
+
+  defp calculate_latency(_error) do
+    1000 # Default latency if timestamp parsing fails
+  end
+
+  defp node_name do
+    # Generate a node name if not explicitly provided
+    System.get_env("NODE_ID") || "node-#{:rand.uniform(100000)}"
+  end
+
+  # Accept incoming connections
+  defp accept_connections(listen_socket) do
+    case :gen_tcp.accept(listen_socket) do
+      {:ok, client_socket} ->
+        # Spawn a new process to handle this client
+        spawn_link(fn -> handle_client(client_socket) end)
+        # Continue accepting connections
+        accept_connections(listen_socket)
+
+      {:error, reason} ->
+        Logger.error("Failed to accept connection: #{reason}")
+        # Retry after a delay
+        Process.sleep(1000)
+        accept_connections(listen_socket)
+    end
+  end
+
+
 
   @impl true
   def handle_call({:connect, host, port}, _from, state) do
@@ -157,23 +254,6 @@ defmodule Kylix.Network.ValidatorNetwork do
     {:noreply, state}
   end
 
-  # Accept incoming connections
-  defp accept_connections(listen_socket) do
-    case :gen_tcp.accept(listen_socket) do
-      {:ok, client_socket} ->
-        # Spawn a new process to handle this client
-        spawn_link(fn -> handle_client(client_socket) end)
-        # Continue accepting connections
-        accept_connections(listen_socket)
-
-      {:error, reason} ->
-        Logger.error("Failed to accept connection: #{reason}")
-        # Retry after a delay
-        Process.sleep(1000)
-        accept_connections(listen_socket)
-    end
-  end
-
   # Handle a new client connection
   defp handle_client(socket) do
     # Receive handshake
@@ -200,83 +280,5 @@ defmodule Kylix.Network.ValidatorNetwork do
         Logger.error("Handshake failed: #{reason}")
         :gen_tcp.close(socket)
     end
-  end
-
-  # Monitor an active connection
-  defp monitor_connection(socket, peer_id) do
-    # Set socket to active mode for this process
-    :inet.setopts(socket, [active: true])
-
-    # Periodically send pings to measure latency
-    schedule_ping(socket, peer_id)
-
-    receive do
-      {:tcp, ^socket, data} ->
-        # Process message
-        GenServer.cast(__MODULE__, {:message, peer_id, data})
-        monitor_connection(socket, peer_id)
-
-      {:tcp_closed, ^socket} ->
-        Logger.info("Connection to #{peer_id} closed")
-        GenServer.cast(__MODULE__, {:connection_closed, peer_id})
-
-      {:tcp_error, ^socket, reason} ->
-        Logger.error("Connection error with #{peer_id}: #{reason}")
-        GenServer.cast(__MODULE__, {:connection_closed, peer_id})
-
-      :ping_time ->
-        send_ping(socket, peer_id)
-        schedule_ping(socket, peer_id)
-        monitor_connection(socket, peer_id)
-    end
-  end
-
-  defp schedule_ping(_socket, _peer_id) do
-    # Send a ping every 30 seconds
-    Process.send_after(self(), :ping_time, 30_000)
-  end
-
-  defp send_ping(socket, _peer_id) do
-    ping = Jason.encode!(%{
-      type: "ping",
-      node_id: node_name(),
-      timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-    })
-    :gen_tcp.send(socket, ping <> "\n")
-  end
-
-  defp measure_latency(socket) do
-    # Send ping and measure time until pong
-    start_time = System.monotonic_time(:millisecond)
-    send_ping(socket, nil)
-
-    # Wait for pong
-    case :gen_tcp.recv(socket, 0, 5000) do
-      {:ok, data} ->
-        response = Jason.decode!(data)
-        if response["type"] == "pong" do
-          end_time = System.monotonic_time(:millisecond)
-          end_time - start_time
-        else
-          1000 # Assume high latency if wrong response
-        end
-
-      {:error, _} ->
-        2000 # Assume very high latency on timeout
-    end
-  end
-
-  defp calculate_latency({:ok, timestamp, _offset}) do
-    current_time = DateTime.utc_now()
-    DateTime.diff(current_time, timestamp, :millisecond)
-  end
-
-  defp calculate_latency(_error) do
-    1000 # Default latency if timestamp parsing fails
-  end
-
-  defp node_name do
-    # Generate a node name if not explicitly provided
-    System.get_env("NODE_ID") || "node-#{:rand.uniform(100000)}"
   end
 end
