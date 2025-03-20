@@ -23,6 +23,9 @@ defmodule Kylix.Query.SparqlOptimizer do
   The optimized query structure
   """
   def optimize(query) do
+    # Initialize pattern_filters if it doesn't exist
+    query = Map.put_new(query, :pattern_filters, [])
+
     query
     |> reorder_triple_patterns()
     |> push_filters()
@@ -75,14 +78,17 @@ defmodule Kylix.Query.SparqlOptimizer do
   This allows filters to be applied early, reducing intermediate result sets.
   """
   def push_filters(query) do
+    # Ensure we have a filters key
+    filters = Map.get(query, :filters, [])
+
     # Identify which variables are used in each filter
-    _filter_vars = Enum.map(query.filters, fn filter ->
+    _filter_vars = Enum.map(filters, fn filter ->
       {filter, [filter.variable]}
     end)
 
     # For each pattern, find relevant filters that can be applied right after it
     optimized_patterns = []
-    remaining_filters = query.filters
+    remaining_filters = filters
 
     {new_patterns, new_filters} =
       Enum.reduce(query.patterns, {optimized_patterns, remaining_filters},
@@ -115,10 +121,15 @@ defmodule Kylix.Query.SparqlOptimizer do
   @doc """
   Extracts variables used in a triple pattern.
   """
-  def pattern_variables(_pattern) do
-    # This is a simplified version - in a real implementation you'd
-    # extract actual variable names from the pattern
-    []
+  def pattern_variables(pattern) do
+    # Extract variables based on the structure of the pattern
+    vars = []
+
+    vars = if is_nil(pattern.s), do: vars ++ ["s"], else: vars
+    vars = if is_nil(pattern.p), do: vars ++ ["p"], else: vars
+    vars = if is_nil(pattern.o), do: vars ++ ["o"], else: vars
+
+    vars
   end
 
   @doc """
@@ -137,7 +148,10 @@ defmodule Kylix.Query.SparqlOptimizer do
   Applies similar optimizations to each OPTIONAL block.
   """
   def optimize_optionals(query) do
-    optimized_optionals = Enum.map(query.optionals, fn optional ->
+    # Ensure we have an optionals key
+    optionals = Map.get(query, :optionals, [])
+
+    optimized_optionals = Enum.map(optionals, fn optional ->
       # Treat each optional as a sub-query and optimize it
       %{
         patterns: reorder_triple_patterns(%{patterns: optional.patterns}).patterns,
@@ -154,7 +168,10 @@ defmodule Kylix.Query.SparqlOptimizer do
   Applies similar optimizations to each branch of a UNION.
   """
   def optimize_unions(query) do
-    optimized_unions = Enum.map(query.unions, fn union ->
+    # Ensure we have a unions key
+    unions = Map.get(query, :unions, [])
+
+    optimized_unions = Enum.map(unions, fn union ->
       %{
         left: %{
           patterns: reorder_triple_patterns(%{patterns: union.left.patterns}).patterns,
@@ -184,7 +201,7 @@ defmodule Kylix.Query.SparqlOptimizer do
     # - Available indexes
 
     pattern_cost = length(query_part.patterns) * 10
-    filter_cost = length(query_part.filters) * 2
+    filter_cost = length(Map.get(query_part, :filters, [])) * 2
 
     pattern_cost + filter_cost
   end
@@ -236,7 +253,8 @@ defmodule Kylix.Query.SparqlOptimizer do
     end)
 
     # Add filter steps
-    plan_with_filters = Enum.reduce(query.filters, plan_with_patterns, fn filter, plan ->
+    filters = Map.get(query, :filters, [])
+    plan_with_filters = Enum.reduce(filters, plan_with_patterns, fn filter, plan ->
       filter_step = %{
         type: :filter,
         filter: filter,

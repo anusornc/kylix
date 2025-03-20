@@ -8,6 +8,7 @@ defmodule Kylix.Query.SparqlEngine do
 
   alias Kylix.Query.SparqlParser
   alias Kylix.Query.SparqlExecutor
+  alias Kylix.Query.SparqlOptimizer
   require Logger
 
   @doc """
@@ -39,7 +40,6 @@ defmodule Kylix.Query.SparqlEngine do
               Logger.debug("Parsed query structure: #{inspect(parsed_query)}")
 
               # Optimize the query
-              alias Kylix.Query.SparqlOptimizer
               optimized_query = SparqlOptimizer.optimize(parsed_query)
               Logger.debug("Optimized query structure: #{inspect(optimized_query)}")
 
@@ -117,21 +117,6 @@ defmodule Kylix.Query.SparqlEngine do
       # Return in the expected format
       {node_id, data, edges}
     end)
-  end
-
-  @doc """
-  Performs query plan optimization for a parsed SPARQL query.
-  """
-  def optimize_query_plan(parsed_query) do
-    # This is a placeholder for future optimization logic
-    # For now, it just returns the original query unchanged
-
-    # Possible optimizations:
-    # 1. Reorder triple patterns for most selective first
-    # 2. Push filters down to be applied as early as possible
-    # 3. Rewrite certain patterns for more efficient execution
-
-    parsed_query
   end
 
   @doc """

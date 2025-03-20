@@ -21,6 +21,12 @@ defmodule Kylix.Query.SparqlAggregator do
   Aggregated result set
   """
   def apply_aggregations(results, aggregates, group_by \\ []) do
+    # Log inputs for debugging
+    IO.puts("Apply aggregations with:")
+    IO.puts("Results: #{inspect(results)}")
+    IO.puts("Aggregates: #{inspect(aggregates)}")
+    IO.puts("Group by: #{inspect(group_by)}")
+
     if Enum.empty?(aggregates) do
       # No aggregations to apply
       results
@@ -31,28 +37,44 @@ defmodule Kylix.Query.SparqlAggregator do
         [{"__all__", results}]
       else
         # Group by the specified variables
-        Enum.group_by(results, fn result ->
-          # Extract the group key as a tuple of the values of the group_by variables
+        groups = Enum.group_by(results, fn result ->
           Enum.map(group_by, &Map.get(result, &1))
         end)
+
+        # Debug grouped results
+        IO.puts("Grouped results: #{inspect(groups)}")
+        groups
       end
 
       # Apply aggregations to each group
-      Enum.map(grouped_results, fn {group_key, group_results} ->
+      aggregated = Enum.map(grouped_results, fn {group_key, group_results} ->
         # Start with a result containing the group_by values
         base_result = if group_key == "__all__" do
           %{}
         else
-          Enum.zip(group_by, List.wrap(group_key))
-          |> Enum.into(%{})
+          if is_list(group_key) do
+            Enum.zip(group_by, group_key)
+            |> Enum.into(%{})
+          else
+            %{Enum.at(group_by, 0) => group_key}
+          end
         end
 
-        # Add each aggregate
+        # Add each aggregate result to the base result
         Enum.reduce(aggregates, base_result, fn agg, result ->
           agg_value = compute_aggregate(agg, group_results)
-          Map.put(result, agg.alias, agg_value)
+
+          # Store the aggregate value both in the alias name and in a special key
+          # that can be used to look it up for functions like COUNT(?o) AS ?relationCount
+          result
+          |> Map.put(agg.alias, agg_value)
+          |> Map.put("count_#{agg.variable}", agg_value)
         end)
       end)
+
+      # Debug the final aggregated results
+      IO.puts("Aggregated results: #{inspect(aggregated)}")
+      aggregated
     end
   end
 
@@ -64,13 +86,20 @@ defmodule Kylix.Query.SparqlAggregator do
     values = Enum.map(results, &Map.get(&1, aggregate.variable))
     |> Enum.filter(&(&1 != nil))
 
+    # Debug the values we're aggregating
+    IO.puts("Computing #{aggregate.function} on values: #{inspect(values)}")
+
     # Apply the appropriate aggregate function
     case aggregate.function do
       :count ->
-        if aggregate.distinct do
-          values |> Enum.uniq() |> Enum.count()
+        if Map.get(aggregate, :distinct, false) do
+          count = values |> Enum.uniq() |> Enum.count()
+          IO.puts("COUNT(DISTINCT) = #{count}")
+          count
         else
-          Enum.count(values)
+          count = Enum.count(values)
+          IO.puts("COUNT = #{count}")
+          count
         end
 
       :sum ->
@@ -103,7 +132,7 @@ defmodule Kylix.Query.SparqlAggregator do
         end
 
       :group_concat ->
-        delimiter = aggregate.options[:separator] || ","
+        delimiter = Map.get(aggregate, :options, %{}) |> Map.get(:separator, ",")
         values |> Enum.join(delimiter)
 
       _ ->
@@ -148,16 +177,38 @@ defmodule Kylix.Query.SparqlAggregator do
       %{function: :count, variable: "s", distinct: true, alias: "count_distinct_s"}
   """
   def parse_aggregate_expression(expr) do
+    # Log the input expression
+    IO.puts("Parsing aggregate expression: #{expr}")
+
     # Basic patterns for common aggregates
     cond do
+      # Handle COUNT with or without DISTINCT
       String.match?(expr, ~r/COUNT\s*\(\s*(?<distinct>DISTINCT\s+)?\?(?<var>[^\s\)]+)\s*\)/i) ->
         captures = Regex.named_captures(~r/COUNT\s*\(\s*(?<distinct>DISTINCT\s+)?\?(?<var>[^\s\)]+)\s*\)/i, expr)
-        %{
+
+        # Check if expr contains AS ?alias
+        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
+        alias_captures = Regex.run(alias_pattern, expr)
+
+        agg_alias = if alias_captures && length(alias_captures) > 1 do
+          # Get the alias from the AS clause
+          Enum.at(alias_captures, 1)
+        else
+          # Default alias is count_var or count_distinct_var
+          "count_#{if captures["distinct"] != "", do: "distinct_", else: ""}#{captures["var"]}"
+        end
+
+        # Create the result
+        result = %{
           function: :count,
           variable: captures["var"],
           distinct: captures["distinct"] != "",
-          alias: "count_#{if captures["distinct"] != "", do: "distinct_", else: ""}#{captures["var"]}"
+          alias: agg_alias
         }
+
+        # Log the parsed result
+        IO.puts("Parsed COUNT expression: #{inspect(result)}")
+        result
 
       String.match?(expr, ~r/SUM\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
         captures = Regex.named_captures(~r/SUM\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
@@ -205,6 +256,14 @@ defmodule Kylix.Query.SparqlAggregator do
           options: %{separator: separator},
           alias: "group_concat_#{captures["var"]}"
         }
+
+      # Parse the AS clause for aliasing
+      String.match?(expr, ~r/.*\s+AS\s+\?(?<alias>[^\s\)]+)/i) ->
+        captures = Regex.named_captures(~r/.*\s+AS\s+\?(?<alias>[^\s\)]+)/i, expr)
+        # Parse the function part before the AS
+        function_part = String.replace(expr, ~r/\s+AS\s+\?[^\s\)]+/i, "")
+        function_map = parse_aggregate_expression(function_part)
+        Map.put(function_map, :alias, captures["alias"])
 
       true ->
         # Default case for unrecognized aggregate
