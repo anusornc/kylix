@@ -54,3 +54,5 @@ erl_crash.dump
 
 # Crash reports
 crash_dump.*
+
+.DS_Store
