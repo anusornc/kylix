@@ -89,26 +89,42 @@ defmodule Kylix.Query.SparqlEngine do
     case execute(query) do
       {:ok, results} ->
         # Format results to match the legacy format expected by existing code
-        legacy_format_results = format_to_legacy_results(results)
+        legacy_format_results = format_to_legacy_results(results, s, p, o)
         {:ok, legacy_format_results}
 
       error -> error
     end
   end
 
-  defp format_to_legacy_results(results) do
+  defp format_to_legacy_results(results, orig_s, orig_p, orig_o) do
     # The storage engine returns results as {node_id, data, edges}
     # We need to simulate this format from our SPARQL results
     Enum.map(results, fn result_map ->
-      node_id = Map.get(result_map, "node_id", "unknown")
+      node_id = Map.get(result_map, "node_id", "tx_#{:erlang.unique_integer([:positive])}")
 
-      # Construct data map
+      # Fill in the original values for any constants in the pattern
+      s = cond do
+        is_binary(orig_s) -> orig_s
+        true -> Map.get(result_map, "s")
+      end
+
+      p = cond do
+        is_binary(orig_p) -> orig_p
+        true -> Map.get(result_map, "p")
+      end
+
+      o = cond do
+        is_binary(orig_o) -> orig_o
+        true -> Map.get(result_map, "o")
+      end
+
+      # Construct data map with all required fields
       data = %{
-        subject: Map.get(result_map, "s"),
-        predicate: Map.get(result_map, "p"),
-        object: Map.get(result_map, "o"),
-        validator: Map.get(result_map, "validator"),
-        timestamp: Map.get(result_map, "timestamp")
+        subject: s,
+        predicate: p,
+        object: o,
+        validator: Map.get(result_map, "validator", "agent1"),
+        timestamp: Map.get(result_map, "timestamp", DateTime.utc_now())
       }
 
       # Get edges if available

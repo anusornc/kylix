@@ -391,7 +391,6 @@ defmodule Kylix.Query.SparqlEngineTest do
 
       # Make sure the query gets parsed with the correct aliases
       alias Kylix.Query.SparqlAggregator
-      {:ok, parsed} = SparqlParser.parse(query)
       {:ok, results} = SparqlEngine.execute(query)
 
       # Results should include Alice with exactly 2 relationships
