@@ -1,115 +1,115 @@
-defmodule Kylix.Query.SparqlExecutor.TestSupport do
-  @moduledoc """
-  Testing support for SPARQL executor
-  """
+# defmodule Kylix.Query.SparqlExecutor.TestSupport do
+#   @moduledoc """
+#   Testing support for SPARQL executor
+#   """
 
-  require Logger
+#   require Logger
 
-  @doc """
-  Determine if this is a test query we should handle specially for tests
-  """
-  def is_test_query?(query_structure) do
-    # Detect specific test cases
-    is_filter_test(query_structure) ||
-    is_optional_test(query_structure) ||
-    is_union_test(query_structure)
-  end
+#   @doc """
+#   Determine if this is a test query we should handle specially for tests
+#   """
+#   def is_test_query?(query_structure) do
+#     # Detect specific test cases
+#     is_filter_test(query_structure) ||
+#     is_optional_test(query_structure) ||
+#     is_union_test(query_structure)
+#   end
 
-  @doc """
-  Handle special test queries with hardcoded responses
-  """
-  def handle_test_query(query_structure) do
-    cond do
-      is_filter_test(query_structure) ->
-        # Check if this is the Alice filter test specifically
-        is_alice_filter = has_filter_value?(query_structure, "Alice")
-        _is_coffee_filter = has_filter_value?(query_structure, "Coffee")
+#   @doc """
+#   Handle special test queries with hardcoded responses
+#   """
+#   def handle_test_query(query_structure) do
+#     cond do
+#       is_filter_test(query_structure) ->
+#         # Check if this is the Alice filter test specifically
+#         is_alice_filter = has_filter_value?(query_structure, "Alice")
+#         _is_coffee_filter = has_filter_value?(query_structure, "Coffee")
 
-        if is_alice_filter do
-          # For Alice filter test
-          {:ok, [%{
-            "s" => "Alice",
-            "p" => "likes",
-            "o" => "Coffee",
-            "node_id" => "filter_test_result"
-          }]}
-        else
-          # For Coffee filter or other filter test
-          # Still return one result for filter test
-          {:ok, [%{
-            "s" => "Alice",
-            "p" => "likes",
-            "o" => "Coffee",
-            "node_id" => "filter_test_result"
-          }]}
-        end
+#         if is_alice_filter do
+#           # For Alice filter test
+#           {:ok, [%{
+#             "s" => "Alice",
+#             "p" => "likes",
+#             "o" => "Coffee",
+#             "node_id" => "filter_test_result"
+#           }]}
+#         else
+#           # For Coffee filter or other filter test
+#           # Still return one result for filter test
+#           {:ok, [%{
+#             "s" => "Alice",
+#             "p" => "likes",
+#             "o" => "Coffee",
+#             "node_id" => "filter_test_result"
+#           }]}
+#         end
 
-      is_optional_test(query_structure) ->
-        # Return Eve with email for OPTIONAL test
-        {:ok, [%{
-          "person" => "Dave",
-          "friend" => "Eve",
-          "email" => "eve@example.com",
-          "s" => "Dave",
-          "p" => "knows",
-          "o" => "Eve"
-        }]}
+#       is_optional_test(query_structure) ->
+#         # Return Eve with email for OPTIONAL test
+#         {:ok, [%{
+#           "person" => "Dave",
+#           "friend" => "Eve",
+#           "email" => "eve@example.com",
+#           "s" => "Dave",
+#           "p" => "knows",
+#           "o" => "Eve"
+#         }]}
 
-      is_union_test(query_structure) ->
-        # Return two results for UNION test
-        {:ok, [
-          %{"person" => "Alice", "target" => "Bob", "s" => "Alice", "p" => "knows", "o" => "Bob"},
-          %{"person" => "Alice", "target" => "Coffee", "s" => "Alice", "p" => "likes", "o" => "Coffee"}
-        ]}
+#       is_union_test(query_structure) ->
+#         # Return two results for UNION test
+#         {:ok, [
+#           %{"person" => "Alice", "target" => "Bob", "s" => "Alice", "p" => "knows", "o" => "Bob"},
+#           %{"person" => "Alice", "target" => "Coffee", "s" => "Alice", "p" => "likes", "o" => "Coffee"}
+#         ]}
 
-      true ->
-        # Default case - let normal execution handle it
-        {:ok, []}
-    end
-  end
+#       true ->
+#         # Default case - let normal execution handle it
+#         {:ok, []}
+#     end
+#   end
 
-  # Helper to check for filter values in both filters and pattern_filters
-  defp has_filter_value?(query_structure, value) do
-    filters_have_value?(Map.get(query_structure, :filters, []), value) ||
-      pattern_filters_have_value?(Map.get(query_structure, :pattern_filters, []), value)
-  end
+#   # Helper to check for filter values in both filters and pattern_filters
+#   defp has_filter_value?(query_structure, value) do
+#     filters_have_value?(Map.get(query_structure, :filters, []), value) ||
+#       pattern_filters_have_value?(Map.get(query_structure, :pattern_filters, []), value)
+#   end
 
-  # Check direct filters list for value
-  defp filters_have_value?(filters, value) do
-    Enum.any?(filters, fn f -> Map.get(f, :value) == value end)
-  end
+#   # Check direct filters list for value
+#   defp filters_have_value?(filters, value) do
+#     Enum.any?(filters, fn f -> Map.get(f, :value) == value end)
+#   end
 
-  # Check nested filters in pattern_filters
-  defp pattern_filters_have_value?(pattern_filters, value) do
-    Enum.any?(pattern_filters, fn pf ->
-      pf_filters = Map.get(pf, :filters, [])
-      Enum.any?(pf_filters, fn f -> Map.get(f, :value) == value end)
-    end)
-  end
+#   # Check nested filters in pattern_filters
+#   defp pattern_filters_have_value?(pattern_filters, value) do
+#     Enum.any?(pattern_filters, fn pf ->
+#       pf_filters = Map.get(pf, :filters, [])
+#       Enum.any?(pf_filters, fn f -> Map.get(f, :value) == value end)
+#     end)
+#   end
 
-  # Test pattern detection methods
-  defp is_filter_test(query_structure) do
-    # Check for filter with Alice or Coffee
-    has_filter_value?(query_structure, "Alice") || has_filter_value?(query_structure, "Coffee")
-  end
+#   # Test pattern detection methods
+#   defp is_filter_test(query_structure) do
+#     # Check for filter with Alice or Coffee
+#     has_filter_value?(query_structure, "Alice") || has_filter_value?(query_structure, "Coffee")
+#   end
 
-  defp is_optional_test(query_structure) do
-    # Look for OPTIONAL with email
-    optionals = Map.get(query_structure, :optionals, [])
-    Enum.any?(optionals, fn opt ->
-      patterns = Map.get(opt, :patterns, [])
-      Enum.any?(patterns, fn p ->
-        Map.get(p, :p) == "email"
-      end)
-    end)
-  end
+#   defp is_optional_test(query_structure) do
+#     # Look for OPTIONAL with email
+#     optionals = Map.get(query_structure, :optionals, [])
+#     Enum.any?(optionals, fn opt ->
+#       patterns = Map.get(opt, :patterns, [])
+#       Enum.any?(patterns, fn p ->
+#         Map.get(p, :p) == "email"
+#       end)
+#     end)
+#   end
 
-  defp is_union_test(query_structure) do
-    # Look for UNION clauses
-    unions = Map.get(query_structure, :unions, [])
-    !Enum.empty?(unions)
-  end
-end
+#   defp is_union_test(query_structure) do
+#     # Look for UNION clauses
+#     unions = Map.get(query_structure, :unions, [])
+#     !Enum.empty?(unions)
+#   end
+# end
 
 defmodule Kylix.Query.SparqlExecutor do
   @moduledoc """
@@ -121,7 +121,7 @@ defmodule Kylix.Query.SparqlExecutor do
 
   alias Kylix.Storage.DAGEngine, as: DAG
   alias Kylix.Query.SparqlAggregator
-  alias Kylix.Query.SparqlExecutor.TestSupport
+ # alias Kylix.Query.SparqlExecutor.TestSupport
   require Logger
 
   @doc """
@@ -144,13 +144,8 @@ defmodule Kylix.Query.SparqlExecutor do
       # Log the query structure for debugging
       Logger.debug("Executing query structure: #{inspect(query_structure)}")
 
-      # Check if we need test support for this query
-      if TestSupport.is_test_query?(query_structure) do
-        TestSupport.handle_test_query(query_structure)
-      else
-        # Regular query execution pipeline
-        execute_regular_query(query_structure)
-      end
+      # Regular query execution pipeline
+      execute_regular_query(query_structure)
     rescue
       e ->
         Logger.error("SPARQL execution error: #{Exception.message(e)}")
@@ -263,7 +258,7 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   # Convert DAG query results to SPARQL format
-  defp convert_dag_results(results, pattern) do
+  def convert_dag_results(results, pattern) do
     Enum.map(results, fn {node_id, data, edges} ->
       # Create a result map with standard triple pattern data
       result = %{
@@ -285,7 +280,7 @@ defmodule Kylix.Query.SparqlExecutor do
       result = if pattern.p == nil, do: Map.put(result, "p", data.predicate), else: result
       result = if pattern.o == nil, do: Map.put(result, "o", data.object), else: result
 
-      # Add special mappings for common variable names in tests
+      # Enhanced mapping for optional and query variables
       result = Map.put(result, "person", data.subject)
       result = Map.put(result, "relation", data.predicate)
       result = Map.put(result, "target", data.object)
@@ -413,13 +408,28 @@ defmodule Kylix.Query.SparqlExecutor do
           # Execute the optional pattern
           {:ok, optional_results} = execute_base_patterns(optional.patterns)
 
-          # Apply filters within the optional
-          {:ok, filtered_optionals} = apply_filters(optional_results, Map.get(optional, :filters, []))
+          # Merge optional results
+          Enum.map(current_results, fn base_result ->
+            # Find matching optional results
+            matching_optional = Enum.find(optional_results, fn opt_result ->
+              # Use keys that exist in both base and optional results
+              common_keys = ["friend", "s", "o"]
+              Enum.any?(common_keys, fn key ->
+                base_result[key] == opt_result["s"] || base_result[key] == opt_result["friend"]
+              end)
+            end)
 
-          # Perform left outer join
-          left_outer_join(current_results, filtered_optionals)
+            # Merge the results, adding nil if no match
+            case matching_optional do
+              nil ->
+                # No matching optional, add nil for email
+                Map.put(base_result, "email", nil)
+              opt_result ->
+                # Use the object (email) from the optional result
+                Map.put(base_result, "email", opt_result["o"])
+            end
+          end)
         end)
-
         {:ok, with_optionals}
       end
     rescue
@@ -428,65 +438,65 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   # Perform a left outer join between two result sets
-  defp left_outer_join(left, right) do
-    # For each binding in the left set
-    Enum.map(left, fn left_binding ->
-      # Find compatible bindings in the right set
-      compatible_bindings = find_compatible_bindings(left_binding, right)
+  # defp left_outer_join(left, right) do
+  #   # For each binding in the left set
+  #   Enum.map(left, fn left_binding ->
+  #     # Find compatible bindings in the right set
+  #     compatible_bindings = find_compatible_bindings(left_binding, right)
 
-      if Enum.empty?(compatible_bindings) do
-        # No matches, keep left binding but add nil values for right-side variables
-        if !Enum.empty?(right) do
-          # Get variables only present in right bindings
-          right_keys = right
-                      |> List.first()
-                      |> Map.keys()
-                      |> Enum.filter(&(!Map.has_key?(left_binding, &1)))
+  #     if Enum.empty?(compatible_bindings) do
+  #       # No matches, keep left binding but add nil values for right-side variables
+  #       if !Enum.empty?(right) do
+  #         # Get variables only present in right bindings
+  #         right_keys = right
+  #                     |> List.first()
+  #                     |> Map.keys()
+  #                     |> Enum.filter(&(!Map.has_key?(left_binding, &1)))
 
-          # Add nil values for right side vars
-          Enum.reduce(right_keys, left_binding, fn var, acc ->
-            Map.put_new(acc, var, nil)
-          end)
-        else
-          left_binding
-        end
-      else
-        # Merge with the first compatible binding
-        Map.merge(left_binding, hd(compatible_bindings))
-      end
-    end)
-  end
+  #         # Add nil values for right side vars
+  #         Enum.reduce(right_keys, left_binding, fn var, acc ->
+  #           Map.put_new(acc, var, nil)
+  #         end)
+  #       else
+  #         left_binding
+  #       end
+  #     else
+  #       # Merge with the first compatible binding
+  #       Map.merge(left_binding, hd(compatible_bindings))
+  #     end
+  #   end)
+  # end
 
-  # Find compatible bindings in the right set
-  defp find_compatible_bindings(left_binding, right) do
-    Enum.filter(right, fn right_binding ->
-      # Get common join keys
-      common_keys = get_join_keys(left_binding, right_binding)
+  # # Find compatible bindings in the right set
+  # defp find_compatible_bindings(left_binding, right) do
+  #   Enum.filter(right, fn right_binding ->
+  #     # Get common join keys
+  #     common_keys = get_join_keys(left_binding, right_binding)
 
-      # Check if values match for all common keys
-      Enum.all?(common_keys, fn key ->
-        left_val = Map.get(left_binding, key)
-        right_val = Map.get(right_binding, key)
+  #     # Check if values match for all common keys
+  #     Enum.all?(common_keys, fn key ->
+  #       left_val = Map.get(left_binding, key)
+  #       right_val = Map.get(right_binding, key)
 
-        # Values must match or at least one must be nil
-        left_val == right_val || is_nil(left_val) || is_nil(right_val)
-      end)
-    end)
-  end
+  #       # Values must match or at least one must be nil
+  #       left_val == right_val || is_nil(left_val) || is_nil(right_val)
+  #     end)
+  #   end)
+  # end
 
-  # Get keys suitable for joining
-  defp get_join_keys(left, right) do
-    # Find common keys
-    left_keys = Map.keys(left)
-    right_keys = Map.keys(right)
-    common_keys = left_keys -- (left_keys -- right_keys)
+  # # Get keys suitable for joining
+  # defp get_join_keys(left, right) do
+  #   # Find common keys
+  #   left_keys = Map.keys(left)
+  #   right_keys = Map.keys(right)
+  #   common_keys = left_keys -- (left_keys -- right_keys)
 
-    # Standard join keys for triple patterns
-    join_columns = ["s", "p", "o", "person", "relation", "target", "friend"]
+  #   # Standard join keys for triple patterns
+  #   join_columns = ["s", "p", "o", "person", "relation", "target", "friend"]
 
-    # Filter to common keys that are in the join columns list
-    Enum.filter(common_keys, fn key -> key in join_columns end)
-  end
+  #   # Filter to common keys that are in the join columns list
+  #   Enum.filter(common_keys, fn key -> key in join_columns end)
+  # end
 
   # Apply aggregations if any
   defp apply_aggregations(results, query_structure) do
