@@ -22,10 +22,10 @@ defmodule Kylix.Query.SparqlAggregator do
   """
   def apply_aggregations(results, aggregates, group_by \\ []) do
     # Log inputs for debugging
-    IO.puts("Apply aggregations with:")
-    IO.puts("Results: #{inspect(results)}")
-    IO.puts("Aggregates: #{inspect(aggregates)}")
-    IO.puts("Group by: #{inspect(group_by)}")
+    Logger.debug("Apply aggregations with:")
+    Logger.debug("Results: #{inspect(results)}")
+    Logger.debug("Aggregates: #{inspect(aggregates)}")
+    Logger.debug("Group by: #{inspect(group_by)}")
 
     if Enum.empty?(aggregates) do
       # No aggregations to apply
@@ -42,8 +42,8 @@ defmodule Kylix.Query.SparqlAggregator do
         end)
 
         # Debug grouped results
-        IO.puts("Grouped results: #{inspect(groups)}")
-        groups
+        Logger.debug("Grouped results: #{inspect(groups)}")
+        Map.to_list(groups)
       end
 
       # Apply aggregations to each group
@@ -73,7 +73,7 @@ defmodule Kylix.Query.SparqlAggregator do
       end)
 
       # Debug the final aggregated results
-      IO.puts("Aggregated results: #{inspect(aggregated)}")
+      Logger.debug("Aggregated results: #{inspect(aggregated)}")
       aggregated
     end
   end
@@ -87,18 +87,18 @@ defmodule Kylix.Query.SparqlAggregator do
     |> Enum.filter(&(&1 != nil))
 
     # Debug the values we're aggregating
-    IO.puts("Computing #{aggregate.function} on values: #{inspect(values)}")
+    Logger.debug("Computing #{aggregate.function} on values: #{inspect(values)}")
 
     # Apply the appropriate aggregate function
     case aggregate.function do
       :count ->
         if Map.get(aggregate, :distinct, false) do
           count = values |> Enum.uniq() |> Enum.count()
-          IO.puts("COUNT(DISTINCT) = #{count}")
+          Logger.debug("COUNT(DISTINCT) = #{count}")
           count
         else
           count = Enum.count(values)
-          IO.puts("COUNT = #{count}")
+          Logger.debug("COUNT = #{count}")
           count
         end
 
@@ -178,7 +178,7 @@ defmodule Kylix.Query.SparqlAggregator do
   """
   def parse_aggregate_expression(expr) do
     # Log the input expression
-    IO.puts("Parsing aggregate expression: #{expr}")
+    Logger.info("Parsing aggregate expression: #{expr}")
 
     # Basic patterns for common aggregates
     cond do
@@ -207,54 +207,109 @@ defmodule Kylix.Query.SparqlAggregator do
         }
 
         # Log the parsed result
-        IO.puts("Parsed COUNT expression: #{inspect(result)}")
+        Logger.info("Parsed COUNT expression: #{inspect(result)}")
         result
 
       String.match?(expr, ~r/SUM\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
         captures = Regex.named_captures(~r/SUM\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
+
+        # Check for AS clause
+        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
+        alias_captures = Regex.run(alias_pattern, expr)
+
+        agg_alias = if alias_captures && length(alias_captures) > 1 do
+          Enum.at(alias_captures, 1)
+        else
+          "sum_#{captures["var"]}"
+        end
+
         %{
           function: :sum,
           variable: captures["var"],
           distinct: false,
-          alias: "sum_#{captures["var"]}"
+          alias: agg_alias
         }
 
       String.match?(expr, ~r/AVG\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
         captures = Regex.named_captures(~r/AVG\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
+
+        # Check for AS clause
+        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
+        alias_captures = Regex.run(alias_pattern, expr)
+
+        agg_alias = if alias_captures && length(alias_captures) > 1 do
+          Enum.at(alias_captures, 1)
+        else
+          "avg_#{captures["var"]}"
+        end
+
         %{
           function: :avg,
           variable: captures["var"],
           distinct: false,
-          alias: "avg_#{captures["var"]}"
+          alias: agg_alias
         }
 
       String.match?(expr, ~r/MIN\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
         captures = Regex.named_captures(~r/MIN\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
+
+        # Check for AS clause
+        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
+        alias_captures = Regex.run(alias_pattern, expr)
+
+        agg_alias = if alias_captures && length(alias_captures) > 1 do
+          Enum.at(alias_captures, 1)
+        else
+          "min_#{captures["var"]}"
+        end
+
         %{
           function: :min,
           variable: captures["var"],
           distinct: false,
-          alias: "min_#{captures["var"]}"
+          alias: agg_alias
         }
 
       String.match?(expr, ~r/MAX\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
         captures = Regex.named_captures(~r/MAX\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
+
+        # Check for AS clause
+        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
+        alias_captures = Regex.run(alias_pattern, expr)
+
+        agg_alias = if alias_captures && length(alias_captures) > 1 do
+          Enum.at(alias_captures, 1)
+        else
+          "max_#{captures["var"]}"
+        end
+
         %{
           function: :max,
           variable: captures["var"],
           distinct: false,
-          alias: "max_#{captures["var"]}"
+          alias: agg_alias
         }
 
       String.match?(expr, ~r/GROUP_CONCAT\s*\(\s*\?(?<var>[^\s\)]+)(\s+SEPARATOR\s+['"](?<sep>[^'"]+)['"])?\s*\)/i) ->
         captures = Regex.named_captures(~r/GROUP_CONCAT\s*\(\s*\?(?<var>[^\s\)]+)(\s+SEPARATOR\s+['"](?<sep>[^'"]+)['"])?\s*\)/i, expr)
         separator = if captures["sep"], do: captures["sep"], else: ","
+
+        # Check for AS clause
+        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
+        alias_captures = Regex.run(alias_pattern, expr)
+
+        agg_alias = if alias_captures && length(alias_captures) > 1 do
+          Enum.at(alias_captures, 1)
+        else
+          "group_concat_#{captures["var"]}"
+        end
+
         %{
           function: :group_concat,
           variable: captures["var"],
           distinct: false,
           options: %{separator: separator},
-          alias: "group_concat_#{captures["var"]}"
+          alias: agg_alias
         }
 
       # Parse the AS clause for aliasing
