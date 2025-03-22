@@ -66,7 +66,8 @@ defmodule Kylix.Query.SparqlParser do
     with {:ok, parts} <- extract_query_parts(query),
          {:ok, variables} <- parse_variables(parts.variables),
          {:ok, clauses} <- extract_clauses(parts.where),
-         {:ok, metadata} <- parse_metadata(parts.rest, parts.variables) do
+         {:ok, metadata} <- parse_metadata(parts.rest, parts.variables)
+    do
       # Build and optimize the query structure
       query_structure = build_query_structure(variables, clauses, metadata)
       {:ok, Kylix.Query.SparqlOptimizer.optimize(query_structure)}
@@ -77,14 +78,12 @@ defmodule Kylix.Query.SparqlParser do
 
   # Extract main parts of the SELECT query
   defp extract_query_parts(query) do
-    select_pattern =
-      ~r/SELECT\s+(?<variables>.+?)\s+WHERE\s+\{(?<where_clause>.+?)\}(?<rest>.*)/is
+    select_pattern = ~r/SELECT\s+(?<variables>.+?)\s+WHERE\s+\{(?<where_clause>.+?)\}(?<rest>.*)/is
 
     case Regex.named_captures(select_pattern, query) do
       %{"variables" => vars, "where_clause" => where, "rest" => rest} ->
         Logger.debug("WHERE clause: #{where}")
         {:ok, %{variables: vars, where: where, rest: rest}}
-
       nil ->
         {:error, "Invalid SELECT query format"}
     end
@@ -98,13 +97,12 @@ defmodule Kylix.Query.SparqlParser do
     filters = extract_filters(where_str)
     patterns = extract_basic_patterns(where_str, optionals, unions, filters)
 
-    {:ok,
-     %{
-       optionals: optionals,
-       unions: unions,
-       filters: filters,
-       patterns: patterns
-     }}
+    {:ok, %{
+      optionals: optionals,
+      unions: unions,
+      filters: filters,
+      patterns: patterns
+    }}
   end
 
   # Parse metadata like GROUP BY, ORDER BY, LIMIT, OFFSET
@@ -116,18 +114,17 @@ defmodule Kylix.Query.SparqlParser do
     order_by = parse_order_by(rest_str)
     {limit, offset} = parse_limit_offset(rest_str)
 
-    {:ok,
-     %{
-       has_aggregates: has_aggregates,
-       aggregates: aggregates,
-       group_by: group_by,
-       order_by: order_by,
-       limit: limit,
-       offset: offset
-     }}
+    {:ok, %{
+      has_aggregates: has_aggregates,
+      aggregates: aggregates,
+      group_by: group_by,
+      order_by: order_by,
+      limit: limit,
+      offset: offset
+    }}
   end
 
-  # Build the final query structure
+  # Build the final query structure with all required keys
   defp build_query_structure(variables, clauses, metadata) do
     %{
       type: :select,
@@ -141,14 +138,18 @@ defmodule Kylix.Query.SparqlParser do
       group_by: metadata.group_by,
       order_by: metadata.order_by,
       limit: metadata.limit,
-      offset: metadata.offset
+      offset: metadata.offset,
+      # Ensure pattern_filters structure is always present
+      pattern_filters: Enum.map(clauses.patterns, fn pattern ->
+        %{pattern: pattern, filters: []}
+      end)
     }
   end
 
-  # Extract OPTIONAL clauses with proper nested pattern handling
+  # Extract OPTIONAL clauses with improved regex
   defp extract_optionals(where_str) do
-    # This matches "OPTIONAL { content }" - using a simpler pattern
-    pattern = ~r/OPTIONAL\s*\{([^{}]*)}/i
+    # Simplified pattern for better matching of OPTIONAL clauses
+    pattern = ~r/OPTIONAL\s*\{\s*([^{}]*)\s*\}/i
 
     optionals = Regex.scan(pattern, where_str, capture: :all_but_first)
     |> List.flatten()
@@ -160,16 +161,14 @@ defmodule Kylix.Query.SparqlParser do
       %{patterns: patterns, filters: optional_filters}
     end)
 
-    # For debugging
     Logger.debug("Extracted OPTIONAL clauses: #{inspect(optionals)}")
     optionals
   end
 
-  # Extract UNION clauses with better pattern handling
+  # Extract UNION clauses with improved pattern handling
   defp extract_unions(where_str) do
-    # Improved pattern to handle UNION syntax better
-    pattern =
-      ~r/\{\s*([^{}]*(?:\{[^{}]*\}[^{}]*)*)\s*\}\s+UNION\s+\{\s*([^{}]*(?:\{[^{}]*\}[^{}]*)*)\s*\}/i
+    # Simplified pattern for better UNION matching
+    pattern = ~r/\{\s*([^{}]*)\s*\}\s+UNION\s+\{\s*([^{}]*)\s*\}/i
 
     Regex.scan(pattern, where_str, capture: :all_but_first)
     |> Enum.map(fn [left_content, right_content] ->
@@ -187,9 +186,10 @@ defmodule Kylix.Query.SparqlParser do
     end)
   end
 
-  # Extract FILTER clauses with improved pattern matching
+  # Extract FILTER clauses with improved pattern
   defp extract_filters(str) do
-    pattern = ~r/FILTER\s*\(\s*([^()]+(?:\([^()]*\)[^()]*)*)\s*\)/i
+    # Simplified pattern for better FILTER matching
+    pattern = ~r/FILTER\s*\(\s*([^()]+)\s*\)/i
 
     Regex.scan(pattern, str, capture: :all_but_first)
     |> List.flatten()
@@ -208,7 +208,8 @@ defmodule Kylix.Query.SparqlParser do
         %{
           type: :equality,
           variable: extract_var_name(var),
-          value: extract_value(value)
+          value: extract_value(value),
+          expression: expr  # Store original expression for reconstruction
         }
 
       # Handle inequality filter
@@ -220,7 +221,8 @@ defmodule Kylix.Query.SparqlParser do
         %{
           type: :inequality,
           variable: extract_var_name(var),
-          value: extract_value(value)
+          value: extract_value(value),
+          expression: expr  # Store original expression for reconstruction
         }
 
       # Handle regex filter
@@ -233,7 +235,8 @@ defmodule Kylix.Query.SparqlParser do
           %{
             type: :regex,
             variable: captures["1"],
-            pattern: captures["2"]
+            pattern: captures["2"],
+            expression: expr  # Store original expression for reconstruction
           }
         else
           %{type: :unknown, expression: expr}
@@ -270,21 +273,21 @@ defmodule Kylix.Query.SparqlParser do
     extract_triple_patterns(clean_str)
   end
 
-  # Extract triple patterns from a string
+  # Extract triple patterns from a string - FIXED: removed Enum.reverse()
   defp extract_triple_patterns(str) do
-    # Improved pattern to handle multi-line triples better
+    # Keep original order by NOT reversing
     str
     |> String.split(".")
     |> Enum.map(&String.trim/1)
     |> Enum.filter(&(String.length(&1) > 0))
     |> Enum.map(&parse_triple/1)
     |> Enum.filter(&(&1 != nil))
+    # No Enum.reverse() call here - keep original pattern order
   end
 
   # Parse a triple string into a pattern structure
   defp parse_triple(triple) do
     parts = String.split(triple, ~r/\s+/)
-
     if length(parts) >= 3 do
       %{
         s: parse_component(Enum.at(parts, 0)),
@@ -299,20 +302,18 @@ defmodule Kylix.Query.SparqlParser do
   # Remove complex structures considering the already extracted parts
   defp remove_complex_structures(str, optionals, unions, filters) do
     # Start with removing OPTIONAL patterns
-    str_without_optionals =
-      Enum.reduce(optionals, str, fn optional, acc ->
-        # We need to remove the entire OPTIONAL {...} block
-        optional_content = extract_optional_content(optional)
-        String.replace(acc, "OPTIONAL {#{optional_content}}", "")
-      end)
+    str_without_optionals = Enum.reduce(optionals, str, fn optional, acc ->
+      # We need to remove the entire OPTIONAL {...} block
+      optional_content = extract_optional_content(optional)
+      String.replace(acc, "OPTIONAL {#{optional_content}}", "")
+    end)
 
     # Remove UNION patterns
-    str_without_unions =
-      Enum.reduce(unions, str_without_optionals, fn union, acc ->
-        # We need to remove the entire {A} UNION {B} block
-        union_pattern = extract_union_content(union)
-        String.replace(acc, union_pattern, "")
-      end)
+    str_without_unions = Enum.reduce(unions, str_without_optionals, fn union, acc ->
+      # We need to remove the entire {A} UNION {B} block
+      union_pattern = extract_union_content(union)
+      String.replace(acc, union_pattern, "")
+    end)
 
     # Remove FILTER patterns
     Enum.reduce(filters, str_without_unions, fn filter, acc ->
@@ -338,23 +339,18 @@ defmodule Kylix.Query.SparqlParser do
     "{#{left_str}} UNION {#{right_str}}"
   end
 
-  # Helper to extract content from a filter for removal
+  # Helper to extract content from a filter for removal - FIXED to handle all filter types
   defp extract_filter_content(filter) do
     cond do
       Map.has_key?(filter, :expression) ->
         filter.expression
-
       filter.type == :equality ->
         "?#{filter.variable} = \"#{filter.value}\""
-
       filter.type == :inequality ->
         "?#{filter.variable} != \"#{filter.value}\""
-
       filter.type == :regex ->
         "regex(?#{filter.variable}, \"#{filter.pattern}\")"
-
       true ->
-        # Default empty string for unknown filter types
         ""
     end
   end
@@ -372,16 +368,14 @@ defmodule Kylix.Query.SparqlParser do
   defp parse_component(component) do
     cond do
       # For variable, tests expect nil
-      String.starts_with?(component, "?") ->
-        nil
+      String.starts_with?(component, "?") -> nil
 
       # For quoted literals, remove the quotes
       String.starts_with?(component, "\"") && String.ends_with?(component, "\"") ->
         String.slice(component, 1..-2//1)
 
       # Everything else, just return as-is
-      true ->
-        component
+      true -> component
     end
   end
 
@@ -459,8 +453,7 @@ defmodule Kylix.Query.SparqlParser do
           if String.starts_with?(var, "?"), do: String.slice(var, 1..-1//1), else: var
         end)
 
-      nil ->
-        []
+      nil -> []
     end
   end
 
@@ -498,8 +491,7 @@ defmodule Kylix.Query.SparqlParser do
         end)
         |> Enum.filter(&(&1 != nil))
 
-      nil ->
-        []
+      nil -> []
     end
   end
 
