@@ -52,6 +52,8 @@ erl_crash.dump
 # Release builds
 /rel/
 
+/docs/TodoList/
+
 # Crash reports
 crash_dump.*
 
