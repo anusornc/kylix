@@ -148,21 +148,17 @@ defmodule Kylix.Query.SparqlParser do
 
   # Extract OPTIONAL clauses with improved regex
   defp extract_optionals(where_str) do
-    # Simplified pattern for better matching of OPTIONAL clauses
+    # Simplified pattern for OPTIONAL clauses
     pattern = ~r/OPTIONAL\s*\{\s*([^{}]*)\s*\}/i
 
-    optionals = Regex.scan(pattern, where_str, capture: :all_but_first)
+    Regex.scan(pattern, where_str, capture: :all_but_first)
     |> List.flatten()
     |> Enum.map(fn inner_content ->
-      # Extract both triple patterns and any filters within the OPTIONAL
       patterns = extract_triple_patterns(inner_content)
       optional_filters = extract_filters(inner_content)
 
       %{patterns: patterns, filters: optional_filters}
     end)
-
-    Logger.debug("Extracted OPTIONAL clauses: #{inspect(optionals)}")
-    optionals
   end
 
   # Extract UNION clauses with improved pattern handling
@@ -282,6 +278,7 @@ defmodule Kylix.Query.SparqlParser do
     |> Enum.filter(&(String.length(&1) > 0))
     |> Enum.map(&parse_triple/1)
     |> Enum.filter(&(&1 != nil))
+    |> Enum.reverse()
     # No Enum.reverse() call here - keep original pattern order
   end
 
