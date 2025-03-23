@@ -10,12 +10,24 @@ defmodule Kylix.Storage.Coordinator do
   require Logger
 
   # Tell Dialyzer to ignore certain false positive warnings
-  @dialyzer {:no_match, [add_node: 2, add_edge: 3, get_node: 1, get_all_nodes: 0, query: 1, sync_cache: 0, clear_all_cache: 0]}
+  @dialyzer {:no_match,
+             [
+               add_node: 2,
+               add_edge: 3,
+               get_node: 1,
+               get_all_nodes: 0,
+               query: 1,
+               sync_cache: 0,
+               clear_all_cache: 0
+             ]}
 
   # Cache configuration
-  @cache_ttl 300 # 5 minutes in seconds
-  @max_cache_size 10000 # Maximum number of cached query results
-  @cache_prune_threshold 8000 # When to prune the cache
+  # 5 minutes in seconds
+  @cache_ttl 300
+  # Maximum number of cached query results
+  @max_cache_size 10000
+  # When to prune the cache
+  @cache_prune_threshold 8000
 
   # Check environment at compile time
   @is_test Mix.env() == :test
@@ -123,73 +135,74 @@ defmodule Kylix.Storage.Coordinator do
     # Measure query execution time
     start_time = System.monotonic_time(:microsecond)
 
-    result = case get_from_cache(pattern) do
-      {:hit, cached_result} ->
-        # Cache hit
-        Logger.debug("Coordinator cache hit for query #{inspect(pattern)}")
+    result =
+      case get_from_cache(pattern) do
+        {:hit, cached_result} ->
+          # Cache hit
+          Logger.debug("Coordinator cache hit for query #{inspect(pattern)}")
 
-        # Update cache hit count
-        increment_metric(:cache_hits)
+          # Update cache hit count
+          increment_metric(:cache_hits)
 
-        # Update access time for LRU tracking
-        update_cache_access_time(pattern)
+          # Update access time for LRU tracking
+          update_cache_access_time(pattern)
 
-        cached_result
+          cached_result
 
-      :miss ->
-        # Cache miss, execute query
-        Logger.debug("Coordinator cache miss for query #{inspect(pattern)}")
+        :miss ->
+          # Cache miss, execute query
+          Logger.debug("Coordinator cache miss for query #{inspect(pattern)}")
 
-        # Update cache miss count
-        increment_metric(:cache_misses)
+          # Update cache miss count
+          increment_metric(:cache_misses)
 
-        # Try in-memory cache first
-        case Kylix.Storage.DAGEngine.query(pattern) do
-          {:ok, results} when results != [] ->
-            # Cache hit with results
-            result = {:ok, results}
-            store_in_cache(pattern, result)
-            result
-
-          other_result ->
-            # Cache miss or empty results
-            if @is_test do
-              # In test mode, just return the result from DAGEngine
-              result = other_result
+          # Try in-memory cache first
+          case Kylix.Storage.DAGEngine.query(pattern) do
+            {:ok, results} when results != [] ->
+              # Cache hit with results
+              result = {:ok, results}
               store_in_cache(pattern, result)
               result
-            else
-              # In non-test mode, try persistent storage
-              Logger.debug("In-memory cache miss for query: #{inspect(pattern)}")
 
-              # Try persistent storage
-              result = Kylix.Storage.PersistentDAGEngine.query(pattern)
+            other_result ->
+              # Cache miss or empty results
+              if @is_test do
+                # In test mode, just return the result from DAGEngine
+                result = other_result
+                store_in_cache(pattern, result)
+                result
+              else
+                # In non-test mode, try persistent storage
+                Logger.debug("In-memory cache miss for query: #{inspect(pattern)}")
 
-              case result do
-                {:ok, results} when results != [] ->
-                  # Got results from persistent storage
-                  # Update in-memory cache with these nodes
-                  for {node_id, data, edges} <- results do
-                    Kylix.Storage.DAGEngine.add_node(node_id, data)
+                # Try persistent storage
+                result = Kylix.Storage.PersistentDAGEngine.query(pattern)
 
-                    # Also add edges to cache
-                    for {to_id, label} <- edges do
-                      Kylix.Storage.DAGEngine.add_edge(node_id, to_id, label)
+                case result do
+                  {:ok, results} when results != [] ->
+                    # Got results from persistent storage
+                    # Update in-memory cache with these nodes
+                    for {node_id, data, edges} <- results do
+                      Kylix.Storage.DAGEngine.add_node(node_id, data)
+
+                      # Also add edges to cache
+                      for {to_id, label} <- edges do
+                        Kylix.Storage.DAGEngine.add_edge(node_id, to_id, label)
+                      end
                     end
-                  end
 
-                  # Store in cache
-                  store_in_cache(pattern, result)
-                  result
+                    # Store in cache
+                    store_in_cache(pattern, result)
+                    result
 
-                other ->
-                  # No results or error from persistent storage
-                  store_in_cache(pattern, other)
-                  other
+                  other ->
+                    # No results or error from persistent storage
+                    store_in_cache(pattern, other)
+                    other
+                end
               end
-            end
-        end
-    end
+          end
+      end
 
     # Calculate and store query execution time
     end_time = System.monotonic_time(:microsecond)
@@ -205,7 +218,8 @@ defmodule Kylix.Storage.Coordinator do
   """
   def sync_cache do
     if @is_test do
-      {:ok, 0}  # No-op in test mode
+      # No-op in test mode
+      {:ok, 0}
     else
       Logger.info("Synchronizing in-memory cache with persistent storage")
 
@@ -291,6 +305,7 @@ defmodule Kylix.Storage.Coordinator do
       [{^cache_key, {result, timestamp}}] ->
         # Check if still valid
         now = System.system_time(:second)
+
         if now - timestamp <= @cache_ttl do
           {:hit, result}
         else
@@ -343,9 +358,12 @@ defmodule Kylix.Storage.Coordinator do
       entries_to_remove = current_size - div(@max_cache_size, 2)
 
       # Find the oldest entries based on access time
-      oldest_entries = :ets.select(:coordinator_cache_access_times,
-        [{{{:"$1", :"$2"}, :"$3"}, [], [{{"$1", "$3"}}]}],
-        entries_to_remove)
+      oldest_entries =
+        :ets.select(
+          :coordinator_cache_access_times,
+          [{{{:"$1", :"$2"}, :"$3"}, [], [{{"$1", "$3"}}]}],
+          entries_to_remove
+        )
 
       # Remove them from both tables
       Enum.each(oldest_entries, fn {timestamp, pattern} ->
@@ -363,8 +381,10 @@ defmodule Kylix.Storage.Coordinator do
     :ets.info(:coordinator_query_cache, :size)
   end
 
-  # Clear all cache data
-  defp clear_all_cache do
+  @doc """
+  Clear all cache data
+  """
+  def clear_all_cache do
     :ets.delete_all_objects(:coordinator_query_cache)
     :ets.delete_all_objects(:coordinator_cache_access_times)
     :ok
@@ -378,20 +398,23 @@ defmodule Kylix.Storage.Coordinator do
     object = Map.get(data, :object)
 
     # Find cache entries that could be affected by this change
-    all_patterns = :ets.tab2list(:coordinator_cache_access_times)
-    |> Enum.map(fn {_, pattern} -> pattern end)
+    all_patterns =
+      :ets.tab2list(:coordinator_cache_access_times)
+      |> Enum.map(fn {_, pattern} -> pattern end)
 
-    affected_patterns = Enum.filter(all_patterns, fn pattern ->
-      # Invalidate if any of these match:
-      # 1. Query is for this subject
-      # 2. Query is for this predicate
-      # 3. Query is for this object
-      # 4. Query is a wildcard for any of these fields
-      {pattern_s, pattern_p, pattern_o} = pattern
-      (pattern_s == subject || pattern_s == nil) ||
-      (pattern_p == predicate || pattern_p == nil) ||
-      (pattern_o == object || pattern_o == nil)
-    end)
+    affected_patterns =
+      Enum.filter(all_patterns, fn pattern ->
+        # Invalidate if any of these match:
+        # 1. Query is for this subject
+        # 2. Query is for this predicate
+        # 3. Query is for this object
+        # 4. Query is a wildcard for any of these fields
+        {pattern_s, pattern_p, pattern_o} = pattern
+
+        pattern_s == subject || pattern_s == nil ||
+          (pattern_p == predicate || pattern_p == nil) ||
+          (pattern_o == object || pattern_o == nil)
+      end)
 
     # Invalidate affected patterns
     invalidate_patterns(affected_patterns)
@@ -402,19 +425,23 @@ defmodule Kylix.Storage.Coordinator do
   # Invalidate cache entries related to an edge
   defp invalidate_edge_related_cache(from_id, to_id) do
     # Find cache entries that could be affected by this edge
-    all_patterns = :ets.tab2list(:coordinator_cache_access_times)
-    |> Enum.map(fn {_, pattern} -> pattern end)
+    all_patterns =
+      :ets.tab2list(:coordinator_cache_access_times)
+      |> Enum.map(fn {_, pattern} -> pattern end)
 
     # For edges, we mainly care about patterns that involve either node
-    affected_patterns = Enum.filter(all_patterns, fn pattern ->
-      {pattern_s, _pattern_p, _pattern_o} = pattern
-      pattern_s == from_id || pattern_s == to_id || pattern_s == nil
-    end)
+    affected_patterns =
+      Enum.filter(all_patterns, fn pattern ->
+        {pattern_s, _pattern_p, _pattern_o} = pattern
+        pattern_s == from_id || pattern_s == to_id || pattern_s == nil
+      end)
 
     # Invalidate affected patterns
     invalidate_patterns(affected_patterns)
 
-    Logger.debug("Selectively invalidated #{length(affected_patterns)} edge-related cache entries")
+    Logger.debug(
+      "Selectively invalidated #{length(affected_patterns)} edge-related cache entries"
+    )
   end
 
   # Invalidate specific patterns from the cache
