@@ -32,6 +32,12 @@ defmodule Kylix.Storage.DAGEngine do
     # สร้างตาราง ets สำหรับโหนดและขอบ
     :ets.new(@table, [:set, :named_table, :protected])
     :ets.new(@edge_table, [:bag, :named_table, :protected])
+
+    # Add indexes for common query patterns
+    :ets.new(:subject_index, [:bag, :named_table, :protected])
+    :ets.new(:predicate_index, [:bag, :named_table, :protected])
+    :ets.new(:object_index, [:bag, :named_table, :protected])
+
     {:ok, %{}}
   end
 
@@ -45,6 +51,20 @@ defmodule Kylix.Storage.DAGEngine do
       {:reply, {:error, :invalid_data}, state}
     else
       :ets.insert(@table, {node_id, data})
+
+      # Update indexes
+      if Map.has_key?(data, :subject) do
+        :ets.insert(:subject_index, {data.subject, node_id})
+      end
+
+      if Map.has_key?(data, :predicate) do
+        :ets.insert(:predicate_index, {data.predicate, node_id})
+      end
+
+      if Map.has_key?(data, :object) do
+        :ets.insert(:object_index, {data.object, node_id})
+      end
+
       Logger.info("After insert, node #{node_id} data: #{inspect(:ets.lookup(@table, node_id))}")
       {:reply, :ok, state}
     end
@@ -77,17 +97,59 @@ defmodule Kylix.Storage.DAGEngine do
   end
 
   @impl true
-  def handle_call({:query, {s, p, o}}, _from, state) do
+  def handle_call({:query, pattern}, _from, state) do
     require Logger
+
+    # Extract the components of the pattern properly
+    {s, p, o} = pattern
+
     Logger.info("Querying with pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
 
-    # Get all nodes from the table
-    all_nodes = :ets.tab2list(@table)
-    Logger.info("All nodes: #{inspect(all_nodes)}")
+    # Get matched nodes using indexes when possible
+    matched_nodes = cond do
+      # Subject is specified - use subject index (most selective)
+      s != nil ->
+        :ets.lookup(:subject_index, s)
+        |> Enum.map(fn {_, node_id} ->
+          case :ets.lookup(@table, node_id) do
+            [{^node_id, data}] -> {node_id, data}
+            _ -> nil
+          end
+        end)
+        |> Enum.filter(&(&1 != nil))
+
+      # Object is specified - use object index (second most selective)
+      o != nil ->
+        :ets.lookup(:object_index, o)
+        |> Enum.map(fn {_, node_id} ->
+          case :ets.lookup(@table, node_id) do
+            [{^node_id, data}] -> {node_id, data}
+            _ -> nil
+          end
+        end)
+        |> Enum.filter(&(&1 != nil))
+
+      # Predicate is specified - use predicate index (least selective)
+      p != nil ->
+        :ets.lookup(:predicate_index, p)
+        |> Enum.map(fn {_, node_id} ->
+          case :ets.lookup(@table, node_id) do
+            [{^node_id, data}] -> {node_id, data}
+            _ -> nil
+          end
+        end)
+        |> Enum.filter(&(&1 != nil))
+
+      # No components specified - use full scan
+      true ->
+        :ets.tab2list(@table)
+    end
+
+    Logger.info("All matched nodes: #{inspect(matched_nodes)}")
 
     # Filter nodes that match the pattern
     matches =
-      all_nodes
+      matched_nodes
       |> Enum.filter(fn {_node_id, data} ->
         is_map(data) and
           (s == nil or Map.get(data, :subject) == s) and
@@ -116,6 +178,9 @@ defmodule Kylix.Storage.DAGEngine do
   def terminate(_reason, _state) do
     :ets.delete(@table)
     :ets.delete(@edge_table)
+    :ets.delete(:subject_index)
+    :ets.delete(:predicate_index)
+    :ets.delete(:object_index)
     :ok
   end
 end

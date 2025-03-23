@@ -3,7 +3,7 @@ defmodule Kylix.Storage.CacheSyncJob do
   require Logger
 
   @sync_interval 5 * 60 * 1000 # 5 minutes
-  @is_test Mix.env() == :test
+  #@is_test Mix.env() == :test
 
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -19,11 +19,10 @@ defmodule Kylix.Storage.CacheSyncJob do
   @impl true
   def handle_info(:sync, state) do
     # Skip sync in test environment
-    unless @is_test do
+    unless Mix.env() == :test do
       Logger.info("Running scheduled cache synchronization")
       case Kylix.Storage.Coordinator.sync_cache() do
         {:ok, count} -> Logger.info("Synchronized #{count} nodes to in-memory cache")
-        error -> Logger.error("Cache sync failed: #{inspect(error)}")
       end
     end
 

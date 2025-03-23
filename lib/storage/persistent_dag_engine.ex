@@ -1,11 +1,13 @@
 defmodule Kylix.Storage.PersistentDAGEngine do
   use GenServer
+  require Logger
 
   # Constants
   @db_dir "data/dag_storage"
   @metadata_file "metadata.bin"
   @nodes_dir "nodes"
   @edges_dir "edges"
+  @cache_ttl 300 # 5 minutes in seconds
 
   # State structure
   # %{
@@ -19,7 +21,8 @@ defmodule Kylix.Storage.PersistentDAGEngine do
   #   cache: %{
   #     nodes: %{node_id => node_data},
   #     edges: %{from_id => [{to_id, label}]}
-  #   }
+  #   },
+  #   query_cache: %{cache_key => {result, timestamp}}
   # }
 
   # Start the persistent DAG engine
@@ -59,10 +62,12 @@ defmodule Kylix.Storage.PersistentDAGEngine do
     # Load recent nodes and edges into cache for faster access
     cache = load_recent_data(db_path, metadata, cache)
 
-    {:ok, %{db_path: db_path, metadata: metadata, cache: cache}}
-  end
+    # Schedule cache cleanup
+    schedule_cache_cleanup()
 
-  # Implement other handle_call functions for get_node, get_all_nodes, query...
+    # Initialize with empty query cache
+    {:ok, %{db_path: db_path, metadata: metadata, cache: cache, query_cache: %{}}}
+  end
 
   # Helper functions for persistence
   defp load_metadata(db_path) do
@@ -108,37 +113,46 @@ defmodule Kylix.Storage.PersistentDAGEngine do
     nodes_dir = Path.join(db_path, @nodes_dir)
 
     nodes =
-      nodes_dir
-      |> File.ls!()
-      # Limit to recent files
-      |> Enum.take(100)
-      |> Enum.reduce(cache.nodes, fn file, acc ->
-        node_id = Path.rootname(file)
+      if File.exists?(nodes_dir) && File.dir?(nodes_dir) do
+        nodes_dir
+        |> File.ls!()
+        # Limit to recent files
+        |> Enum.take(100)
+        |> Enum.reduce(cache.nodes, fn file, acc ->
+          node_id = Path.rootname(file)
 
-        node_data =
-          Path.join(nodes_dir, file)
-          |> File.read!()
-          |> :erlang.binary_to_term()
+          node_data =
+            Path.join(nodes_dir, file)
+            |> File.read!()
+            |> :erlang.binary_to_term()
 
-        Map.put(acc, node_id, node_data)
-      end)
+          Map.put(acc, node_id, node_data)
+        end)
+      else
+        cache.nodes
+      end
 
     # Similar approach for edges
     edges_dir = Path.join(db_path, @edges_dir)
 
     edges =
-      if File.exists?(edges_dir) do
+      if File.exists?(edges_dir) && File.dir?(edges_dir) && File.ls!(edges_dir) != [] do
         edges_dir
         |> File.ls!()
         |> Enum.take(100)
         |> Enum.reduce(cache.edges, fn file, acc ->
-          {from_id, to_id, label} =
+          edge_data =
             Path.join(edges_dir, file)
             |> File.read!()
             |> :erlang.binary_to_term()
 
-          edges_from = Map.get(acc, from_id, [])
-          Map.put(acc, from_id, [{to_id, label} | edges_from])
+          case edge_data do
+            {from_id, to_id, label} ->
+              edges_from = Map.get(acc, from_id, [])
+              Map.put(acc, from_id, [{to_id, label} | edges_from])
+            _ ->
+              acc
+          end
         end)
       else
         %{}
@@ -190,6 +204,9 @@ defmodule Kylix.Storage.PersistentDAGEngine do
       # Update state
       new_state = %{state | metadata: new_metadata, cache: new_cache}
 
+      # Invalidate query cache since data has changed
+      new_state = %{new_state | query_cache: %{}}
+
       Logger.info("Node #{node_id} persisted to disk")
       {:reply, :ok, new_state}
     end
@@ -223,6 +240,9 @@ defmodule Kylix.Storage.PersistentDAGEngine do
 
       # Update state
       new_state = %{state | metadata: new_metadata, cache: new_cache}
+
+      # Invalidate query cache since data has changed
+      new_state = %{new_state | query_cache: %{}}
 
       {:reply, :ok, new_state}
     else
@@ -266,52 +286,121 @@ defmodule Kylix.Storage.PersistentDAGEngine do
     nodes_in_cache = state.cache.nodes
 
     # You might also want to include nodes on disk that aren't in cache
+    nodes_dir = Path.join([state.db_path, @nodes_dir])
+
     nodes_on_disk =
-      Path.join([state.db_path, @nodes_dir])
-      |> File.ls!()
-      |> Enum.map(fn file ->
-        node_id = Path.rootname(file)
+      if File.exists?(nodes_dir) && File.dir?(nodes_dir) do
+        nodes_dir
+        |> File.ls!()
+        |> Enum.map(fn file ->
+          node_id = Path.rootname(file)
 
-        if Map.has_key?(nodes_in_cache, node_id) do
-          {node_id, Map.get(nodes_in_cache, node_id)}
-        else
-          node_data =
-            Path.join([state.db_path, @nodes_dir, file])
-            |> File.read!()
-            |> :erlang.binary_to_term()
+          if Map.has_key?(nodes_in_cache, node_id) do
+            {node_id, Map.get(nodes_in_cache, node_id)}
+          else
+            node_data =
+              Path.join([state.db_path, @nodes_dir, file])
+              |> File.read!()
+              |> :erlang.binary_to_term()
 
-          {node_id, node_data}
-        end
-      end)
-      |> Map.new()
+            {node_id, node_data}
+          end
+        end)
+        |> Map.new()
+      else
+        %{}
+      end
 
     {:reply, Map.to_list(nodes_on_disk), state}
   end
 
   @impl true
-  def handle_call({:query, {s, p, o}}, _from, state) do
+  def handle_call({:query, pattern}, _from, state) do
     require Logger
-    Logger.info("Querying with pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
 
-    # First get all nodes from the cache
-    matches =
-      state.cache.nodes
-      |> Enum.filter(fn {_node_id, data} ->
-        is_map(data) and
-          (s == nil or Map.get(data, :subject) == s) and
-          (p == nil or Map.get(data, :predicate) == p) and
-          (o == nil or Map.get(data, :object) == o)
+    # Generate cache key from the pattern
+    cache_key = :erlang.term_to_binary(pattern)
+
+    # Check if query result is cached
+    case check_query_cache(cache_key, state.query_cache) do
+      {:hit, result} ->
+        Logger.info("Query cache hit for pattern #{inspect(pattern)}")
+        {:reply, result, state}
+
+      :miss ->
+        Logger.info("Query cache miss for pattern #{inspect(pattern)}")
+
+        # Execute the query
+        {s, p, o} = pattern
+
+        Logger.info("Querying with pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
+
+        # First get all nodes from the cache
+        matches =
+          state.cache.nodes
+          |> Enum.filter(fn {_node_id, data} ->
+            is_map(data) and
+              (s == nil or Map.get(data, :subject) == s) and
+              (p == nil or Map.get(data, :predicate) == p) and
+              (o == nil or Map.get(data, :object) == o)
+          end)
+
+        # Build the result tuples with edges
+        results =
+          Enum.map(matches, fn {node_id, data} ->
+            # Find all edges where this node is the source
+            edges = Map.get(state.cache.edges, node_id, [])
+            {node_id, data, edges}
+          end)
+
+        Logger.info("Query results: #{inspect(results)}")
+
+        # Store result in query cache
+        now = System.system_time(:second)
+        result = {:ok, results}
+        new_query_cache = Map.put(state.query_cache, cache_key, {result, now})
+
+        {:reply, result, %{state | query_cache: new_query_cache}}
+    end
+  end
+
+  # Helper function to check the query cache
+  defp check_query_cache(cache_key, query_cache) do
+    case Map.get(query_cache, cache_key) do
+      nil ->
+        :miss
+
+      {result, timestamp} ->
+        # Check if cache entry is still valid
+        now = System.system_time(:second)
+        if now - timestamp <= @cache_ttl do
+          {:hit, result}
+        else
+          :miss
+        end
+    end
+  end
+
+  # Schedule cache cleanup
+  defp schedule_cache_cleanup do
+    Process.send_after(self(), :cache_cleanup, 60 * 1000) # Run every minute
+  end
+
+  # Handle cache cleanup
+  @impl true
+  def handle_info(:cache_cleanup, state) do
+    now = System.system_time(:second)
+
+    # Remove expired entries
+    new_query_cache =
+      Enum.filter(state.query_cache, fn {_, {_, timestamp}} ->
+        now - timestamp <= @cache_ttl
       end)
+      |> Enum.into(%{})
 
-    # Build the result tuples with edges
-    results =
-      Enum.map(matches, fn {node_id, data} ->
-        # Find all edges where this node is the source
-        edges = Map.get(state.cache.edges, node_id, [])
-        {node_id, data, edges}
-      end)
+    # Schedule next cleanup
+    schedule_cache_cleanup()
 
-    Logger.info("Query results: #{inspect(results)}")
-    {:reply, {:ok, results}, state}
+    {:noreply, %{state | query_cache: new_query_cache}}
   end
 end

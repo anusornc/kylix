@@ -32,9 +32,14 @@ defmodule Kylix.Application do
 
       # Common services across all environments
       {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},
-      {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]}
+      {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]},
+
+      # Start the CacheSyncJob for periodic cache synchronization
+      {Kylix.Storage.CacheSyncJob, []}
     ]
     |> Enum.filter(&(&1 != nil)) # Filter out nil entries from the if condition
+    # Initialize the query cache
+    Kylix.Storage.Coordinator.init_cache()
 
     opts = [strategy: :rest_for_one, name: Kylix.Supervisor]
     Supervisor.start_link(children, opts)
