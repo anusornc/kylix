@@ -20,21 +20,21 @@ defmodule Kylix.Application do
       |> Enum.filter(&String.ends_with?(&1, ".pub"))
       |> Enum.map(&Path.rootname/1)
 
-    # Choose different children based on environment
-    children = if Mix.env() == :test do
-      [
-        # For tests, use DAGEngine
-        {Kylix.Storage.DAGEngine, []},
-        {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},
-        {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]}
-      ]
-    else
-      [
-        {Kylix.Storage.PersistentDAGEngine, [db_path: db_path]},
-        {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},
-        {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]}
-      ]
-    end
+    # Start both storage engines in all environments
+    children = [
+      # Always start the in-memory DAGEngine for fast queries/caching
+      {Kylix.Storage.DAGEngine, []},
+
+      # In non-test mode, also start the persistent engine
+      if Mix.env() != :test do
+        {Kylix.Storage.PersistentDAGEngine, [db_path: db_path]}
+      end,
+
+      # Common services across all environments
+      {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},
+      {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]}
+    ]
+    |> Enum.filter(&(&1 != nil)) # Filter out nil entries from the if condition
 
     opts = [strategy: :rest_for_one, name: Kylix.Supervisor]
     Supervisor.start_link(children, opts)

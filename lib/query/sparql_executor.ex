@@ -119,9 +119,9 @@ defmodule Kylix.Query.SparqlExecutor do
   executes them, and formats the results in a SPARQL-compatible way.
   """
 
-  alias Kylix.Storage.DAGEngine, as: DAG
+  # alias Kylix.Storage.DAGEngine, as: DAG
   alias Kylix.Query.SparqlAggregator
- # alias Kylix.Query.SparqlExecutor.TestSupport
+  # alias Kylix.Query.SparqlExecutor.TestSupport
   require Logger
 
   @doc """
@@ -145,12 +145,12 @@ defmodule Kylix.Query.SparqlExecutor do
       Logger.debug("Executing query structure: #{inspect(query_structure)}")
 
       # Check if we need test support for this query
-      #if TestSupport.is_test_query?(query_structure) do
+      # if TestSupport.is_test_query?(query_structure) do
       #  TestSupport.handle_test_query(query_structure)
-      #else
-        # Regular query execution pipeline
-        execute_regular_query(query_structure)
-      #end
+      # else
+      # Regular query execution pipeline
+      execute_regular_query(query_structure)
+      # end
     rescue
       e ->
         Logger.error("SPARQL execution error: #{Exception.message(e)}")
@@ -191,8 +191,7 @@ defmodule Kylix.Query.SparqlExecutor do
          {:ok, aggregated} <- apply_aggregations(with_optionals, query_structure),
          {:ok, ordered} <- apply_ordering(aggregated, query_structure.order_by),
          {:ok, limited} <- apply_limits(ordered, query_structure.limit, query_structure.offset),
-         {:ok, projected} <- project_variables(limited, query_structure.variables)
-    do
+         {:ok, projected} <- project_variables(limited, query_structure.variables) do
       # Log final results and return
       Logger.debug("Final results: #{inspect(projected)}")
       {:ok, projected}
@@ -209,9 +208,10 @@ defmodule Kylix.Query.SparqlExecutor do
         {:ok, results}
       else
         # Extract all filters from pattern_filters
-        all_filters = Enum.flat_map(pattern_filters, fn pf ->
-          Map.get(pf, :filters, [])
-        end)
+        all_filters =
+          Enum.flat_map(pattern_filters, fn pf ->
+            Map.get(pf, :filters, [])
+          end)
 
         # Apply these filters using the existing apply_filters function
         apply_filters(results, all_filters)
@@ -228,15 +228,17 @@ defmodule Kylix.Query.SparqlExecutor do
       if Enum.empty?(patterns) do
         {:ok, [%{}]}
       else
-        results = Enum.reduce(patterns, [%{}], fn pattern, current_solutions ->
-          Enum.flat_map(current_solutions, fn solution ->
-            pattern_results = execute_pattern(pattern, solution)
-            Enum.map(pattern_results, fn pattern_binding ->
-              merge_bindings(solution, pattern_binding)
+        results =
+          Enum.reduce(patterns, [%{}], fn pattern, current_solutions ->
+            Enum.flat_map(current_solutions, fn solution ->
+              pattern_results = execute_pattern(pattern, solution)
+
+              Enum.map(pattern_results, fn pattern_binding ->
+                merge_bindings(solution, pattern_binding)
+              end)
+              |> Enum.filter(&(&1 != nil))
             end)
-            |> Enum.filter(&(&1 != nil))
           end)
-        end)
 
         Logger.debug("Base results: #{inspect(results)}")
         {:ok, results}
@@ -249,12 +251,18 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   # Execute a single pattern with the current binding
+  # Execute a single pattern with the current binding
   defp execute_pattern(pattern, binding) do
     # Extract values from the pattern and binding
     {s, p, o} = extract_pattern_values(pattern, binding)
 
-    # Query the DAG storage
-    case DAG.query({s, p, o}) do
+    # Log the DAG query we're about to perform
+    Logger.debug(
+      "Executing DAG query with pattern: {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}"
+    )
+
+    # Query using our coordinator for proper caching
+    case Kylix.Storage.Coordinator.query({s, p, o}) do
       {:ok, results} ->
         # Convert DAG results to SPARQL format
         Logger.debug("DAG results for pattern #{inspect(pattern)}: #{inspect(results)}")
@@ -263,26 +271,20 @@ defmodule Kylix.Query.SparqlExecutor do
       error ->
         # Log and return empty results for error cases
         Logger.error("Error querying DAG: #{inspect(error)}")
-
-        # For wildcard patterns, create test data
-        if is_nil(s) && is_nil(p) && is_nil(o) do
-          create_test_data_for_wildcard()
-        else
-          []
-        end
+        []
     end
   end
 
   # Create sample test data for wildcard pattern
-  defp create_test_data_for_wildcard do
-    [
-      %{"s" => "Alice", "p" => "knows", "o" => "Bob", "node_id" => "test1"},
-      %{"s" => "Alice", "p" => "likes", "o" => "Coffee", "node_id" => "test2"},
-      %{"s" => "Bob", "p" => "knows", "o" => "Charlie", "node_id" => "test3"},
-      %{"s" => "Charlie", "p" => "knows", "o" => "Dave", "node_id" => "test4"},
-      %{"s" => "Bob", "p" => "likes", "o" => "Tea", "node_id" => "test5"}
-    ]
-  end
+  # defp create_test_data_for_wildcard do
+  #   [
+  #     %{"s" => "Alice", "p" => "knows", "o" => "Bob", "node_id" => "test1"},
+  #     %{"s" => "Alice", "p" => "likes", "o" => "Coffee", "node_id" => "test2"},
+  #     %{"s" => "Bob", "p" => "knows", "o" => "Charlie", "node_id" => "test3"},
+  #     %{"s" => "Charlie", "p" => "knows", "o" => "Dave", "node_id" => "test4"},
+  #     %{"s" => "Bob", "p" => "likes", "o" => "Tea", "node_id" => "test5"}
+  #   ]
+  # end
 
   # Convert DAG query results to SPARQL format
   defp convert_dag_results(results, pattern) do
@@ -296,8 +298,15 @@ defmodule Kylix.Query.SparqlExecutor do
       }
 
       # Add additional metadata if available
-      result = if Map.has_key?(data, :validator), do: Map.put(result, "validator", data.validator), else: result
-      result = if Map.has_key?(data, :timestamp), do: Map.put(result, "timestamp", data.timestamp), else: result
+      result =
+        if Map.has_key?(data, :validator),
+          do: Map.put(result, "validator", data.validator),
+          else: result
+
+      result =
+        if Map.has_key?(data, :timestamp),
+          do: Map.put(result, "timestamp", data.timestamp),
+          else: result
 
       # Add edges info
       result = Map.put(result, "edges", edges)
@@ -307,13 +316,8 @@ defmodule Kylix.Query.SparqlExecutor do
       result = if pattern.p == nil, do: Map.put(result, "p", data.predicate), else: result
       result = if pattern.o == nil, do: Map.put(result, "o", data.object), else: result
 
-      # Add special mappings for common variable names in tests
-      result = Map.put(result, "person", data.subject)
-      result = Map.put(result, "relation", data.predicate)
-      result = Map.put(result, "target", data.object)
-      result = Map.put(result, "friend", data.object)
-
-      result
+      # Apply all variable mappings using the mapper
+      Kylix.Query.VariableMapper.apply_mappings(result, data)
     end)
   end
 
@@ -385,10 +389,11 @@ defmodule Kylix.Query.SparqlExecutor do
         {:ok, results}
       else
         # Apply each filter
-        filtered_results = Enum.filter(results, fn result ->
-          # All filters must pass
-          Enum.all?(filters, fn filter -> apply_filter(result, filter) end)
-        end)
+        filtered_results =
+          Enum.filter(results, fn result ->
+            # All filters must pass
+            Enum.all?(filters, fn filter -> apply_filter(result, filter) end)
+          end)
 
         {:ok, filtered_results}
       end
@@ -410,6 +415,7 @@ defmodule Kylix.Query.SparqlExecutor do
 
       :regex ->
         value = Map.get(result, filter.variable)
+
         if is_binary(value) do
           case Regex.compile(filter.pattern) do
             {:ok, regex} -> Regex.match?(regex, value)
@@ -419,54 +425,59 @@ defmodule Kylix.Query.SparqlExecutor do
           false
         end
 
-      _ -> true
+      _ ->
+        true
     end
   end
 
   # Process OPTIONAL clauses
   # Process OPTIONAL clauses
-defp process_optionals(results, optionals) do
-  try do
-    if Enum.empty?(optionals) do
-      # No optionals, return results as-is
-      {:ok, results}
-    else
-      # Process each optional clause
-      with_optionals = Enum.reduce(optionals, results, fn optional, current_results ->
-        # Execute the optional pattern
-        {:ok, optional_results} = execute_base_patterns(optional.patterns)
+  defp process_optionals(results, optionals) do
+    try do
+      if Enum.empty?(optionals) do
+        # No optionals, return results as-is
+        {:ok, results}
+      else
+        # Process each optional clause
+        with_optionals =
+          Enum.reduce(optionals, results, fn optional, current_results ->
+            # Execute the optional pattern
+            {:ok, optional_results} = execute_base_patterns(optional.patterns)
 
-        # Apply filters to optional results if any exist
-        optional_filters = Map.get(optional, :filters, [])
-        {:ok, filtered_optional_results} = apply_filters(optional_results, optional_filters)
+            # Apply filters to optional results if any exist
+            optional_filters = Map.get(optional, :filters, [])
+            {:ok, filtered_optional_results} = apply_filters(optional_results, optional_filters)
 
-        # Merge optional results
-        Enum.map(current_results, fn base_result ->
-          # Find matching optional results - check all possible join keys
-          matching_optionals = Enum.filter(filtered_optional_results, fn opt_result ->
-            # Try various join keys to find matches
-            (base_result["friend"] == opt_result["s"]) ||
-            (base_result["s"] == opt_result["s"]) ||
-            (base_result["o"] == opt_result["s"])
+            # Merge optional results
+            Enum.map(current_results, fn base_result ->
+              # Find matching optional results - check all possible join keys
+              matching_optionals =
+                Enum.filter(filtered_optional_results, fn opt_result ->
+                  # Try various join keys to find matches
+                  base_result["friend"] == opt_result["s"] ||
+                    base_result["s"] == opt_result["s"] ||
+                    base_result["o"] == opt_result["s"]
+                end)
+
+              # If any optional matches found, merge with the first one
+              case matching_optionals do
+                [] ->
+                  # No matching optional, add nil for email
+                  Map.put(base_result, "email", nil)
+
+                [first_match | _] ->
+                  # Use the object value from the optional result as email
+                  Map.put(base_result, "email", first_match["o"])
+              end
+            end)
           end)
 
-          # If any optional matches found, merge with the first one
-          case matching_optionals do
-            [] ->
-              # No matching optional, add nil for email
-              Map.put(base_result, "email", nil)
-            [first_match | _] ->
-              # Use the object value from the optional result as email
-              Map.put(base_result, "email", first_match["o"])
-          end
-        end)
-      end)
-      {:ok, with_optionals}
+        {:ok, with_optionals}
+      end
+    rescue
+      e -> {:error, "Error processing OPTIONAL clauses: #{Exception.message(e)}"}
     end
-  rescue
-    e -> {:error, "Error processing OPTIONAL clauses: #{Exception.message(e)}"}
   end
-end
 
   # Perform a left outer join between two result sets
   # defp left_outer_join(left, right) do
@@ -559,24 +570,26 @@ end
         {:ok, results}
       else
         # Sort according to ordering specifications
-        ordered = Enum.sort(results, fn a, b ->
-          # Compare based on order_by variables
-          Enum.reduce_while(order_by, nil, fn ordering, _ ->
-            a_val = Map.get(a, ordering.variable)
-            b_val = Map.get(b, ordering.variable)
+        ordered =
+          Enum.sort(results, fn a, b ->
+            # Compare based on order_by variables
+            # Default if all comparisons are equal
+            Enum.reduce_while(order_by, nil, fn ordering, _ ->
+              a_val = Map.get(a, ordering.variable)
+              b_val = Map.get(b, ordering.variable)
 
-            comparison = compare_values(a_val, b_val)
+              comparison = compare_values(a_val, b_val)
 
-            if comparison == 0 do
-              # Equal, continue to next criteria
-              {:cont, nil}
-            else
-              # Apply direction (asc or desc)
-              result = if ordering.direction == :asc, do: comparison < 0, else: comparison > 0
-              {:halt, result}
-            end
-          end) || false # Default if all comparisons are equal
-        end)
+              if comparison == 0 do
+                # Equal, continue to next criteria
+                {:cont, nil}
+              else
+                # Apply direction (asc or desc)
+                result = if ordering.direction == :asc, do: comparison < 0, else: comparison > 0
+                {:halt, result}
+              end
+            end) || false
+          end)
 
         {:ok, ordered}
       end
@@ -587,8 +600,11 @@ end
 
   # Compare values for ordering
   defp compare_values(a, b) when is_nil(a) and is_nil(b), do: 0
-  defp compare_values(a, _) when is_nil(a), do: -1  # nil comes first
-  defp compare_values(_, b) when is_nil(b), do: 1   # nil comes first
+  # nil comes first
+  defp compare_values(a, _) when is_nil(a), do: -1
+  # nil comes first
+  defp compare_values(_, b) when is_nil(b), do: 1
+
   defp compare_values(a, b) when is_number(a) and is_number(b) do
     cond do
       a < b -> -1
@@ -596,6 +612,7 @@ end
       true -> 0
     end
   end
+
   defp compare_values(a, b) when is_binary(a) and is_binary(b) do
     cond do
       a < b -> -1
@@ -603,6 +620,7 @@ end
       true -> 0
     end
   end
+
   defp compare_values(%DateTime{} = a, %DateTime{} = b) do
     case DateTime.compare(a, b) do
       :lt -> -1
@@ -610,24 +628,27 @@ end
       :eq -> 0
     end
   end
+
   defp compare_values(a, b), do: compare_values(to_string(a), to_string(b))
 
   # Apply LIMIT and OFFSET
   defp apply_limits(results, limit, offset) do
     try do
       # Apply offset first (if provided)
-      offset_results = if offset && offset > 0 do
-        Enum.drop(results, offset)
-      else
-        results
-      end
+      offset_results =
+        if offset && offset > 0 do
+          Enum.drop(results, offset)
+        else
+          results
+        end
 
       # Then apply limit (if provided)
-      limited_results = if limit && limit > 0 do
-        Enum.take(offset_results, limit)
-      else
-        offset_results
-      end
+      limited_results =
+        if limit && limit > 0 do
+          Enum.take(offset_results, limit)
+        else
+          offset_results
+        end
 
       {:ok, limited_results}
     rescue
@@ -638,10 +659,11 @@ end
   # Project only the requested variables
   defp project_variables(results, variables) do
     try do
-      projected = Enum.map(results, fn binding ->
-        # Create projections with just the requested variables
-        create_projection(binding, variables)
-      end)
+      projected =
+        Enum.map(results, fn binding ->
+          # Create projections with just the requested variables
+          create_projection(binding, variables)
+        end)
 
       {:ok, projected}
     rescue
@@ -678,9 +700,11 @@ end
         Map.has_key?(aggregate_aliases, var) ->
           # Try each possible source key
           possible_keys = Map.get(aggregate_aliases, var, [])
-          found_value = Enum.find_value(possible_keys, fn key ->
-            Map.get(binding, key)
-          end)
+
+          found_value =
+            Enum.find_value(possible_keys, fn key ->
+              Map.get(binding, key)
+            end)
 
           Map.put(proj, var, found_value)
 

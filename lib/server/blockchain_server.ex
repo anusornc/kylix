@@ -193,13 +193,13 @@ defmodule Kylix.BlockchainServer do
                             hash: "test_hash_#{tx_id}"
                           }
 
-                          # Add to storage
-                          :ok = Kylix.Storage.DAGEngine.add_node(tx_id, tx_data)
+                          # Add to storage using Coordinator
+                          :ok = Kylix.Storage.Coordinator.add_node(tx_id, tx_data)
 
                           # Link to previous transaction if not the first
                           if state.tx_count > 0 do
                             prev_tx_id = "tx#{state.tx_count}"
-                            :ok = Kylix.Storage.DAGEngine.add_edge(prev_tx_id, tx_id, "confirms")
+                            :ok = Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
                           end
 
                           # Update state
@@ -249,19 +249,13 @@ defmodule Kylix.BlockchainServer do
                               hash: Base.encode16(tx_hash)
                             }
 
-                            # Add to persistent storage
-                            :ok = Kylix.Storage.PersistentDAGEngine.add_node(tx_id, tx_data)
+                            # Add to storage using Coordinator
+                            :ok = Kylix.Storage.Coordinator.add_node(tx_id, tx_data)
 
                             # Link to previous transaction
                             if state.tx_count > 0 do
                               prev_tx_id = "tx#{state.tx_count}"
-
-                              :ok =
-                                Kylix.Storage.PersistentDAGEngine.add_edge(
-                                  prev_tx_id,
-                                  tx_id,
-                                  "confirms"
-                                )
+                              :ok = Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
                             end
 
                             # Update state
@@ -297,7 +291,7 @@ defmodule Kylix.BlockchainServer do
   defp check_original_tx_exists(s, p, o) do
     pattern = {s, p, o}
 
-    case Kylix.Storage.DAGEngine.query(pattern) do
+    case Kylix.Storage.Coordinator.query(pattern) do
       {:ok, []} -> false
       {:ok, _results} -> true
       _ -> false
@@ -369,14 +363,8 @@ defmodule Kylix.BlockchainServer do
   defp check_duplicate_direct(s, p, o) do
     pattern = {s, p, o}
 
-    # Get the appropriate storage engine based on environment
-    # Use DAGEngine for test environment, PersistentDAGEngine otherwise
-    result =
-      if Mix.env() == :test do
-        Kylix.Storage.DAGEngine.query(pattern)
-      else
-        Kylix.Storage.PersistentDAGEngine.query(pattern)
-      end
+    # Use Coordinator for all storage operations
+    result = Kylix.Storage.Coordinator.query(pattern)
 
     # Check if any results were found
     case result do
@@ -398,17 +386,11 @@ defmodule Kylix.BlockchainServer do
   end
 
   # Handle query request
-  # Forwards the query to the DAG Engine and returns results
+  # Forwards the query to the Coordinator and returns results
   @impl true
   def handle_call({:query, pattern}, _from, state) do
-    # Use DAGEngine for test environment, PersistentDAGEngine otherwise
-    result =
-      if Mix.env() == :test do
-        Kylix.Storage.DAGEngine.query(pattern)
-      else
-        Kylix.Storage.PersistentDAGEngine.query(pattern)
-      end
-
+    # Use Coordinator for all storage operations
+    result = Kylix.Storage.Coordinator.query(pattern)
     {:reply, result, state}
   end
 
