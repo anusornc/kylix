@@ -21,19 +21,19 @@ defmodule Kylix.MixProject do
 
   defp deps do
     [
-      {:jason, "~> 1.4"},
-      {:plug_cowboy, "~> 2.6"},
-      {:absinthe, "~> 1.7.8"},
-      {:absinthe_plug, "~> 1.5.8"},
-      {:rdf, "~> 2.0"},
-      {:sparql, "~> 0.3.10"},
-      {:ex_crypto, "~> 0.10"},
-      {:telemetry, "~> 1.2"},
-      {:telemetry_metrics, "~> 0.6"},
-      {:credo, "~> 1.7", only: [:dev, :test]},
-      {:dialyxir, "~> 1.3", only: [:dev], runtime: false},
-      {:ex_doc, "~> 0.29", only: :dev, runtime: false},
-      {:meck, "~> 1.0.0", only: :test}
+      {:jason, "~> 1.4"},               # use for json serialization
+      {:plug_cowboy, "~> 2.6"},         # use for api server
+      {:absinthe, "~> 1.7.8"},          # use for graphql server
+      {:absinthe_plug, "~> 1.5.8"},     # use for graphql server
+      {:rdf, "~> 2.0"},                 # use for rdf graph
+      {:sparql, "~> 0.3.10"},           # use for sparql
+      {:ex_crypto, "~> 0.10"},          # use for encryption
+      {:telemetry, "~> 1.2"},           # use for monitoring
+      {:telemetry_metrics, "~> 0.6"},   # use for monitoring
+      {:credo, "~> 1.7", only: [:dev, :test]},              #use for code analysis
+      {:dialyxir, "~> 1.3", only: [:dev], runtime: false},  #use for static analysis
+      {:ex_doc, "~> 0.29", only: :dev, runtime: false},     #use for documentation
+      {:meck, "~> 1.0.0", only: :test}                    #use for mocking
     ]
   end
 end

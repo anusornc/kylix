@@ -7,6 +7,7 @@ defmodule Kylix.Application do
     port = Application.get_env(:kylix, :port, 4040)
     node_id = Application.get_env(:kylix, :node_id, "kylix-node")
     validators_dir = Application.get_env(:kylix, :validators_dir, "config/validators")
+    api_port = Application.get_env(:kylix, :api_port, 4000)
 
     # Create required directories if not in test environment
     unless Mix.env() == :test do
@@ -35,9 +36,15 @@ defmodule Kylix.Application do
       {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]},
 
       # Start the CacheSyncJob for periodic cache synchronization
-      {Kylix.Storage.CacheSyncJob, []}
+      {Kylix.Storage.CacheSyncJob, []},
+
+      # Start the API server (but not in test mode)
+      if Mix.env() != :test do
+        {Kylix.API.Server, [port: api_port]}
+      end
     ]
     |> Enum.filter(&(&1 != nil)) # Filter out nil entries from the if condition
+
     # Initialize the query cache
     Kylix.Storage.Coordinator.init_cache()
 
