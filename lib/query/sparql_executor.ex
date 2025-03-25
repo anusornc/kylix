@@ -185,13 +185,14 @@ defmodule Kylix.Query.SparqlExecutor do
     with {:ok, base_results} <- execute_base_patterns(query_structure.patterns),
          {:ok, with_unions} <- add_union_results(base_results, query_structure.unions),
          {:ok, filtered1} <- apply_filters(with_unions, query_structure.filters),
-         # Add this new step to apply pattern filters
          {:ok, filtered} <- apply_pattern_filters(filtered1, query_structure.pattern_filters),
          {:ok, with_optionals} <- process_optionals(filtered, query_structure.optionals),
          {:ok, aggregated} <- apply_aggregations(with_optionals, query_structure),
          {:ok, ordered} <- apply_ordering(aggregated, query_structure.order_by),
          {:ok, limited} <- apply_limits(ordered, query_structure.limit, query_structure.offset),
-         {:ok, projected} <- project_variables(limited, query_structure.variables) do
+         # Pass the query_structure to project_variables
+         {:ok, projected} <-
+           project_variables(limited, query_structure.variables, query_structure) do
       # Log final results and return
       Logger.debug("Final results: #{inspect(projected)}")
       {:ok, projected}
@@ -547,9 +548,12 @@ defmodule Kylix.Query.SparqlExecutor do
         # Get aggregation specifications and group by variables
         aggregates = Map.get(query_structure, :aggregates, [])
         group_by = Map.get(query_structure, :group_by, [])
+        var_positions = Map.get(query_structure, :variable_positions, %{})
 
-        # Apply aggregations
-        aggregated = SparqlAggregator.apply_aggregations(results, aggregates, group_by)
+        # Apply aggregations with variable positions
+        aggregated =
+          SparqlAggregator.apply_aggregations(results, aggregates, group_by, var_positions)
+
         Logger.debug("After aggregation: #{inspect(aggregated)}")
 
         {:ok, aggregated}
@@ -657,69 +661,65 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   # Project only the requested variables
-  defp project_variables(results, variables) do
-    try do
-      projected =
-        Enum.map(results, fn binding ->
-          # Create projections with just the requested variables
-          create_projection(binding, variables)
-        end)
+  defp project_variables(results, variables, query_structure) do
+    projected =
+      Enum.map(results, fn binding ->
+        # Create projections with just the requested variables
+        create_projection(binding, variables, query_structure)
+      end)
 
-      {:ok, projected}
-    rescue
-      e -> {:error, "Error projecting variables: #{Exception.message(e)}"}
-    end
+    {:ok, projected}
   end
 
   # Create a projection with only the requested variables
-  defp create_projection(binding, variables) do
-    # Maps for special variable handling
+  # In SparqlExecutor.ex, modify the create_projection function
+  defp create_projection(binding, variables, query_structure) do
+    # Get variable positions from query structure
+    var_positions = Map.get(query_structure, :variable_positions, %{})
+
+    # Maps for special variable handling (extend with additional mappings)
     special_vars = %{
       "person" => "s",
       "relation" => "p",
       "target" => "o",
       "friend" => "o",
-      "friendOfFriend" => "o",
-      "email" => "o"
-    }
-
-    # For aggregate aliases
-    aggregate_aliases = %{
-      "relationCount" => ["count_target", "count_o"],
-      "friendCount" => ["count_friend"]
+      "source" => "o",
+      "entity" => "s",
+      "agent" => "o"
+      # Keep any other existing mappings
     }
 
     # For each requested variable, find its value in the binding
     Enum.reduce(variables, %{}, fn var, proj ->
       cond do
-        # Variable exists directly in binding
+        # First check if variable already exists directly in the binding
         Map.has_key?(binding, var) ->
           Map.put(proj, var, Map.get(binding, var))
 
-        # Check if it's a special aggregate alias
-        Map.has_key?(aggregate_aliases, var) ->
-          # Try each possible source key
-          possible_keys = Map.get(aggregate_aliases, var, [])
+        # Special case for relationCount
+        var == "relationCount" ->
+          Map.put(proj, var, Map.get(binding, "relationCount") ||
+                             Map.get(binding, "count_target") ||
+                             Map.get(binding, "count_o"))
 
-          found_value =
-            Enum.find_value(possible_keys, fn key ->
-              Map.get(binding, key)
-            end)
+        # Then check variable positions from query analysis
+        Map.has_key?(var_positions, var) ->
+          position = Map.get(var_positions, var)
+          value = case position do
+            "s" -> Map.get(binding, "s")
+            "p" -> Map.get(binding, "p")
+            "o" -> Map.get(binding, "o")
+            _ -> nil
+          end
+          Map.put(proj, var, value)
 
-          Map.put(proj, var, found_value)
-
-        # Check for count_x aggregate pattern
-        Map.has_key?(binding, "count_#{var}") ->
-          Map.put(proj, var, Map.get(binding, "count_#{var}"))
-
-        # Check if it's a special mapped variable
+        # Check if it's a special mapped variable (as fallback)
         Map.has_key?(special_vars, var) ->
           source_var = Map.get(special_vars, var)
           Map.put(proj, var, Map.get(binding, source_var))
 
         # Variable not found
         true ->
-          # Add the variable with a nil value to ensure it's in the result
           Map.put(proj, var, nil)
       end
     end)

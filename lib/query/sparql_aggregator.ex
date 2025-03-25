@@ -20,12 +20,13 @@ defmodule Kylix.Query.SparqlAggregator do
 
   Aggregated result set
   """
-  def apply_aggregations(results, aggregates, group_by \\ []) do
+  def apply_aggregations(results, aggregates, group_by \\ [], var_positions \\ %{}) do
     # Log inputs for debugging
     Logger.debug("Apply aggregations with:")
     Logger.debug("Results: #{inspect(results)}")
     Logger.debug("Aggregates: #{inspect(aggregates)}")
     Logger.debug("Group by: #{inspect(group_by)}")
+    Logger.debug("Variable positions: #{inspect(var_positions)}")
 
     if Enum.empty?(aggregates) do
       # No aggregations to apply
@@ -38,7 +39,17 @@ defmodule Kylix.Query.SparqlAggregator do
       else
         # Group by the specified variables
         groups = Enum.group_by(results, fn result ->
-          Enum.map(group_by, &Map.get(result, &1))
+          Enum.map(group_by, fn var ->
+            # Use variable positions to get the correct value
+            position = Map.get(var_positions, var)
+            value = case position do
+              "s" -> Map.get(result, "s")
+              "p" -> Map.get(result, "p")
+              "o" -> Map.get(result, "o")
+              _ -> Map.get(result, var)  # Fall back to direct lookup
+            end
+            value || Map.get(result, var)  # Additional fallback
+          end)
         end)
 
         # Debug grouped results
@@ -62,10 +73,26 @@ defmodule Kylix.Query.SparqlAggregator do
 
         # Add each aggregate result to the base result
         Enum.reduce(aggregates, base_result, fn agg, result ->
-          agg_value = compute_aggregate(agg, group_results)
+          # Use variable position for the aggregate variable if available
+          agg_variable = agg.variable
+          position = Map.get(var_positions, agg_variable)
+
+          # If we have a position mapping, update the aggregate to use the right field
+          updated_agg = if position do
+            field = case position do
+              "s" -> "s"
+              "p" -> "p"
+              "o" -> "o"
+              _ -> agg_variable
+            end
+            Map.put(agg, :field, field)
+          else
+            agg
+          end
+
+          agg_value = compute_aggregate(updated_agg, group_results)
 
           # Store the aggregate value both in the alias name and in a special key
-          # that can be used to look it up for functions like COUNT(?o) AS ?relationCount
           result
           |> Map.put(agg.alias, agg_value)
           |> Map.put("count_#{agg.variable}", agg_value)
@@ -83,7 +110,13 @@ defmodule Kylix.Query.SparqlAggregator do
   """
   def compute_aggregate(aggregate, results) do
     # Extract values for the variable from results
-    values = Enum.map(results, &Map.get(&1, aggregate.variable))
+    # Use the field from variable positions if available
+    field = Map.get(aggregate, :field, aggregate.variable)
+
+    values = Enum.map(results, fn result ->
+      # Try field first, then fall back to variable name
+      Map.get(result, field) || Map.get(result, aggregate.variable)
+    end)
     |> Enum.filter(&(&1 != nil))
 
     # Debug the values we're aggregating
