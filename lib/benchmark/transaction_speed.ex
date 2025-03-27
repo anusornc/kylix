@@ -10,7 +10,7 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     ensure_output_dir()
 
     # Reset the application
-    :ok = Application.stop(:kylix)
+    # :ok = Application.stop(:kylix)
     {:ok, _} = Application.ensure_all_started(:kylix)
 
     # Set up test data

@@ -17,7 +17,10 @@ defmodule Kylix.API.Router do
         send_json_resp(conn, 200, %{status: "success", data: formatted_results})
 
       {:error, reason} ->
-        send_json_resp(conn, 500, %{status: "error", message: "Failed to fetch transactions: #{reason}"})
+        send_json_resp(conn, 500, %{
+          status: "error",
+          message: "Failed to fetch transactions: #{reason}"
+        })
     end
   end
 
@@ -25,13 +28,15 @@ defmodule Kylix.API.Router do
   post "/transactions" do
     Logger.info("Submitting transaction: #{inspect(conn.body_params)}")
 
-    with %{"subject" => subject,
+    with %{
+           "subject" => subject,
            "predicate" => predicate,
            "object" => object,
            "validator_id" => validator_id,
-           "signature" => signature} <- conn.body_params,
-         {:ok, tx_id} <- Kylix.add_transaction(subject, predicate, object, validator_id, signature) do
-
+           "signature" => signature
+         } <- conn.body_params,
+         {:ok, tx_id} <-
+           Kylix.add_transaction(subject, predicate, object, validator_id, signature) do
       send_json_resp(conn, 201, %{status: "success", transaction_id: tx_id})
     else
       {:error, reason} ->
@@ -40,7 +45,8 @@ defmodule Kylix.API.Router do
       _ ->
         send_json_resp(conn, 400, %{
           status: "error",
-          message: "Invalid parameters. Required: subject, predicate, object, validator_id, signature"
+          message:
+            "Invalid parameters. Required: subject, predicate, object, validator_id, signature"
         })
     end
   end
@@ -82,9 +88,10 @@ defmodule Kylix.API.Router do
     node_count = length(results)
 
     # Count all edges
-    edge_count = Enum.reduce(results, 0, fn {_, _, edges}, acc ->
-      acc + length(edges)
-    end)
+    edge_count =
+      Enum.reduce(results, 0, fn {_, _, edges}, acc ->
+        acc + length(edges)
+      end)
 
     # Load transaction speed benchmark results from file
     benchmark_data = load_benchmark_data()
@@ -98,7 +105,8 @@ defmodule Kylix.API.Router do
         hit_rate: cache_metrics.hit_rate_percent
       },
       query: %{
-        avg_time: cache_metrics.avg_query_time_microseconds / 1000,  # Convert to milliseconds
+        # Convert to milliseconds
+        avg_time: cache_metrics.avg_query_time_microseconds / 1000,
         total_queries: cache_metrics.cache_hits + cache_metrics.cache_misses
       },
       storage: %{
@@ -116,32 +124,50 @@ defmodule Kylix.API.Router do
     Logger.info("Running transaction speed benchmark")
 
     # Get benchmark parameters from request body or use defaults
-    params =
+    count =
       case conn.body_params do
-        %{"count" => count, "concurrent" => concurrent} ->
-          [count: count, concurrent: concurrent]
-        %{"count" => count} ->
-          [count: count]
-        %{"concurrent" => concurrent} ->
-          [concurrent: concurrent]
-        _ ->
-          [] # Use defaults
+        %{"count" => count} -> count
+        # Default
+        _ -> 1000
       end
 
     # Run the benchmark
     try do
-      # Assuming Kylix.TransactionSpeed.run exists
-      benchmark_result = apply(Kylix.TransactionSpeed, :run, [params])
+      # Call your existing benchmark module
+      benchmark_result = Kylix.Benchmark.TransactionSpeed.run_baseline_test(count)
+
+      # Format the result for JSON response
+      formatted_result = %{
+        "timestamp" => benchmark_result.timestamp,
+        "transaction_count" => benchmark_result.total_transactions,
+        # Your baseline test is sequential
+        "concurrent_connections" => 1,
+        "total_time_ms" => benchmark_result.total_time_ms,
+        "transactions_per_second" => benchmark_result.transactions_per_second,
+        # Convert μs to ms
+        "avg_latency_ms" => benchmark_result.average_tx_time_us / 1000,
+        "latency_percentiles" => %{
+          "min" => benchmark_result.min_tx_time_us / 1000,
+          # Not available in your results
+          "p25" => 0,
+          "p50" => benchmark_result.percentiles.p50 / 1000,
+          # Not available in your results
+          "p75" => 0,
+          "p95" => benchmark_result.percentiles.p95 / 1000,
+          "max" => benchmark_result.max_tx_time_us / 1000
+        }
+      }
 
       # Return the result
       send_json_resp(conn, 200, %{
         status: "success",
         message: "Benchmark completed successfully",
-        data: benchmark_result
+        data: formatted_result
       })
     rescue
       e ->
         Logger.error("Benchmark error: #{Exception.message(e)}")
+
         send_json_resp(conn, 500, %{
           status: "error",
           message: "Failed to run benchmark: #{Exception.message(e)}"
@@ -151,15 +177,16 @@ defmodule Kylix.API.Router do
 
   # POST /validators - Add a new validator
   post "/validators" do
-    with %{"validator_id" => validator_id,
-           "pubkey" => pubkey,
-           "known_by" => known_by} <- conn.body_params,
+    with %{"validator_id" => validator_id, "pubkey" => pubkey, "known_by" => known_by} <-
+           conn.body_params,
          {:ok, new_validator} <- Kylix.add_validator(validator_id, pubkey, known_by) do
-
       send_json_resp(conn, 201, %{status: "success", validator_id: new_validator})
     else
       {:error, reason} ->
-        send_json_resp(conn, 400, %{status: "error", message: "Failed to add validator: #{reason}"})
+        send_json_resp(conn, 400, %{
+          status: "error",
+          message: "Failed to add validator: #{reason}"
+        })
 
       _ ->
         send_json_resp(conn, 400, %{
@@ -188,9 +215,22 @@ defmodule Kylix.API.Router do
     |> send_resp(status, Jason.encode!(data))
   end
 
-  # Format transaction results for API output
   defp format_transaction_results(results) do
     Enum.map(results, fn {node_id, data, edges} ->
+      # Generate hash if missing
+      hash =
+        case Map.get(data, :hash) do
+          nil ->
+            # Generate hash using same algorithm
+            hash_data =
+              "#{data.subject}|#{data.predicate}|#{data.object}|#{Map.get(data, :validator, "")}|#{DateTime.to_iso8601(Map.get(data, :timestamp, DateTime.utc_now()))}"
+
+            :crypto.hash(:sha256, hash_data) |> Base.encode16()
+
+          existing_hash ->
+            existing_hash
+        end
+
       %{
         id: node_id,
         subject: data.subject,
@@ -198,6 +238,8 @@ defmodule Kylix.API.Router do
         object: data.object,
         validator: Map.get(data, :validator, nil),
         timestamp: format_datetime(Map.get(data, :timestamp, nil)),
+        # Include calculated or existing hash
+        hash: hash,
         edges: format_edges(edges)
       }
     end)
@@ -225,8 +267,10 @@ defmodule Kylix.API.Router do
         File.ls!(benchmark_dir)
         |> Enum.filter(&String.ends_with?(&1, ".json"))
         |> Enum.sort()
-        |> Enum.reverse() # Get newest first
-        |> Enum.take(5) # Take only the 5 most recent
+        # Get newest first
+        |> Enum.reverse()
+        # Take only the 5 most recent
+        |> Enum.take(5)
 
       # Return empty if no files
       if files == [] do
@@ -238,6 +282,7 @@ defmodule Kylix.API.Router do
         # Read and parse the most recent file
         latest_file = hd(files)
         latest_path = Path.join(benchmark_dir, latest_file)
+
         latest_data =
           case File.read(latest_path) do
             {:ok, content} ->
@@ -245,7 +290,9 @@ defmodule Kylix.API.Router do
                 {:ok, parsed} -> parsed
                 _ -> %{}
               end
-            _ -> %{}
+
+            _ ->
+              %{}
           end
 
         # Read all files for time series data
@@ -259,9 +306,13 @@ defmodule Kylix.API.Router do
                 case Jason.decode(content) do
                   {:ok, parsed} ->
                     Map.put(parsed, "timestamp", timestamp)
-                  _ -> nil
+
+                  _ ->
+                    nil
                 end
-              _ -> nil
+
+              _ ->
+                nil
             end
           end)
           |> Enum.filter(&(&1 != nil))
@@ -289,6 +340,7 @@ defmodule Kylix.API.Router do
         timestamp_str
         |> String.replace("_", " ")
         |> String.replace("-", ":")
+
       _ ->
         # If no match, use the filename without extension
         Path.rootname(filename)
