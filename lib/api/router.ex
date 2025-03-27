@@ -70,6 +70,85 @@ defmodule Kylix.API.Router do
     send_json_resp(conn, 200, %{status: "success", data: validators})
   end
 
+  # GET /metrics - Fetch performance metrics
+  get "/metrics" do
+    Logger.info("Fetching performance metrics")
+
+    # Get cache metrics from the Coordinator
+    cache_metrics = Kylix.Storage.Coordinator.get_cache_metrics()
+
+    # Get basic system metrics
+    {:ok, results} = Kylix.Storage.Coordinator.query({nil, nil, nil})
+    node_count = length(results)
+
+    # Count all edges
+    edge_count = Enum.reduce(results, 0, fn {_, _, edges}, acc ->
+      acc + length(edges)
+    end)
+
+    # Load transaction speed benchmark results from file
+    benchmark_data = load_benchmark_data()
+
+    # Combine all metrics
+    metrics = %{
+      cache: %{
+        hits: cache_metrics.cache_hits,
+        misses: cache_metrics.cache_misses,
+        size: cache_metrics.cache_size,
+        hit_rate: cache_metrics.hit_rate_percent
+      },
+      query: %{
+        avg_time: cache_metrics.avg_query_time_microseconds / 1000,  # Convert to milliseconds
+        total_queries: cache_metrics.cache_hits + cache_metrics.cache_misses
+      },
+      storage: %{
+        node_count: node_count,
+        edge_count: edge_count
+      },
+      benchmarks: benchmark_data
+    }
+
+    send_json_resp(conn, 200, %{status: "success", data: metrics})
+  end
+
+  # POST /run-benchmark - Run a transaction speed test
+  post "/run-benchmark" do
+    Logger.info("Running transaction speed benchmark")
+
+    # Get benchmark parameters from request body or use defaults
+    params =
+      case conn.body_params do
+        %{"count" => count, "concurrent" => concurrent} ->
+          [count: count, concurrent: concurrent]
+        %{"count" => count} ->
+          [count: count]
+        %{"concurrent" => concurrent} ->
+          [concurrent: concurrent]
+        _ ->
+          [] # Use defaults
+      end
+
+    # Run the benchmark
+    try do
+      # Assuming Kylix.TransactionSpeed.run exists
+      benchmark_result = apply(Kylix.TransactionSpeed, :run, [params])
+
+      # Return the result
+      send_json_resp(conn, 200, %{
+        status: "success",
+        message: "Benchmark completed successfully",
+        data: benchmark_result
+      })
+    rescue
+      e ->
+        Logger.error("Benchmark error: #{Exception.message(e)}")
+        send_json_resp(conn, 500, %{
+          status: "error",
+          message: "Failed to run benchmark: #{Exception.message(e)}"
+        })
+    end
+  end
+
   # POST /validators - Add a new validator
   post "/validators" do
     with %{"validator_id" => validator_id,
@@ -132,5 +211,87 @@ defmodule Kylix.API.Router do
       {from, to, label} -> %{from: from, to: to, label: label}
       {to, label} -> %{to: to, label: label}
     end)
+  end
+
+  # Load transaction benchmark data from JSON files
+  defp load_benchmark_data do
+    # Path to benchmark directory
+    benchmark_dir = "data/benchmark"
+
+    # Check if directory exists
+    if File.exists?(benchmark_dir) && File.dir?(benchmark_dir) do
+      # List all JSON files in the directory
+      files =
+        File.ls!(benchmark_dir)
+        |> Enum.filter(&String.ends_with?(&1, ".json"))
+        |> Enum.sort()
+        |> Enum.reverse() # Get newest first
+        |> Enum.take(5) # Take only the 5 most recent
+
+      # Return empty if no files
+      if files == [] do
+        %{
+          results: [],
+          latest: nil
+        }
+      else
+        # Read and parse the most recent file
+        latest_file = hd(files)
+        latest_path = Path.join(benchmark_dir, latest_file)
+        latest_data =
+          case File.read(latest_path) do
+            {:ok, content} ->
+              case Jason.decode(content) do
+                {:ok, parsed} -> parsed
+                _ -> %{}
+              end
+            _ -> %{}
+          end
+
+        # Read all files for time series data
+        all_results =
+          Enum.map(files, fn file ->
+            path = Path.join(benchmark_dir, file)
+            timestamp = extract_timestamp_from_filename(file)
+
+            case File.read(path) do
+              {:ok, content} ->
+                case Jason.decode(content) do
+                  {:ok, parsed} ->
+                    Map.put(parsed, "timestamp", timestamp)
+                  _ -> nil
+                end
+              _ -> nil
+            end
+          end)
+          |> Enum.filter(&(&1 != nil))
+
+        # Return structured data
+        %{
+          results: all_results,
+          latest: latest_data
+        }
+      end
+    else
+      # Directory doesn't exist
+      %{
+        results: [],
+        latest: nil
+      }
+    end
+  end
+
+  # Extract timestamp from filename like "benchmark_2023-05-25_12-30-45.json"
+  defp extract_timestamp_from_filename(filename) do
+    case Regex.run(~r/benchmark_(.+)\.json$/, filename) do
+      [_, timestamp_str] ->
+        # Convert to friendlier format if needed
+        timestamp_str
+        |> String.replace("_", " ")
+        |> String.replace("-", ":")
+      _ ->
+        # If no match, use the filename without extension
+        Path.rootname(filename)
+    end
   end
 end
