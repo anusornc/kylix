@@ -13,6 +13,26 @@ defmodule Kylix.API.Dashboard do
       <title>Kylix Blockchain Explorer</title>
       <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
       <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+      <style>
+        /* Tooltip styles */
+        .tooltip {
+          position: relative;
+          cursor: pointer;
+        }
+        .tooltip:hover::after {
+          content: attr(title);
+          position: absolute;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%);
+          background-color: #333;
+          color: white;
+          padding: 5px 10px;
+          border-radius: 4px;
+          white-space: nowrap;
+          z-index: 10;
+        }
+      </style>
     </head>
     <body class="bg-gray-100">
       <div class="container mx-auto px-4 py-8">
@@ -21,56 +41,61 @@ defmodule Kylix.API.Dashboard do
           <p class="text-gray-600">A DAG-based blockchain for provenance tracking</p>
         </header>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <!-- Transaction Explorer Section -->
-          <div class="bg-white p-6 rounded-lg shadow-md">
-            <h2 class="text-xl font-semibold mb-4">Transaction Explorer</h2>
-            <div class="mb-4">
-              <input id="txSearch" type="text" placeholder="Search by ID, subject, predicate, or object"
-                class="w-full p-2 border border-gray-300 rounded">
-            </div>
-            <div class="mb-4">
-              <button id="loadTxBtn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                Load Transactions
-              </button>
-            </div>
-            <div id="txResults" class="mt-4 overflow-x-auto">
-              <table class="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Predicate</th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Object</th>
-                  </tr>
-                </thead>
-                <tbody id="txTableBody" class="divide-y divide-gray-200">
-                  <!-- Transaction rows will go here -->
-                </tbody>
-              </table>
-            </div>
+        <!-- 1. Transaction Explorer Section - Now full width -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+          <h2 class="text-xl font-semibold mb-4">Transaction Explorer</h2>
+          <div class="mb-4 flex flex-wrap gap-4">
+            <input id="txSearch" type="text" placeholder="Search by ID, subject, predicate, or object"
+              class="flex-grow p-2 border border-gray-300 rounded">
+            <button id="loadTxBtn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+              Load Transactions
+            </button>
+            <select id="txSortOrder" class="p-2 border border-gray-300 rounded">
+              <option value="id_asc">ID (Ascending)</option>
+              <option value="id_desc">ID (Descending)</option>
+              <option value="timestamp_desc" selected>Newest First</option>
+              <option value="timestamp_asc">Oldest First</option>
+            </select>
           </div>
-
-          <!-- SPARQL Query Section -->
-          <div class="bg-white p-6 rounded-lg shadow-md">
-            <h2 class="text-xl font-semibold mb-4">SPARQL Query</h2>
-            <div class="mb-4">
-              <textarea id="sparqlQuery" rows="5" placeholder="Enter SPARQL query..."
-                class="w-full p-2 border border-gray-300 rounded"></textarea>
-            </div>
-            <div class="mb-4">
-              <button id="runQueryBtn" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
-                Run Query
-              </button>
-            </div>
-            <div id="queryResults" class="mt-4 overflow-x-auto">
-              <!-- Query results will go here -->
-            </div>
+          <div id="txResults" class="mt-4 overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Predicate</th>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Object</th>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validator</th>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hash</th>
+                </tr>
+              </thead>
+              <tbody id="txTableBody" class="divide-y divide-gray-200">
+                <!-- Transaction rows will go here -->
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <!-- Benchmark Visualization Section -->
-        <div class="mt-8 bg-white p-6 rounded-lg shadow-md">
+        <!-- 2. SPARQL Query Section - Now full width -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+          <h2 class="text-xl font-semibold mb-4">SPARQL Query</h2>
+          <div class="mb-4">
+            <textarea id="sparqlQuery" rows="5" placeholder="Enter SPARQL query..."
+              class="w-full p-2 border border-gray-300 rounded"></textarea>
+          </div>
+          <div class="mb-4">
+            <button id="runQueryBtn" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+              Run Query
+            </button>
+          </div>
+          <div id="queryResults" class="mt-4 overflow-x-auto">
+            <!-- Query results will go here -->
+          </div>
+        </div>
+
+        <!-- 3. Performance Benchmarks Section - Now full width -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
           <h2 class="text-xl font-semibold mb-4">Performance Benchmarks</h2>
 
           <div class="mb-6 p-4 bg-gray-50 rounded-lg">
@@ -204,10 +229,10 @@ defmodule Kylix.API.Dashboard do
           </div>
         </div>
 
-        <!-- Transaction Submission Form -->
-        <div class="mt-8 bg-white p-6 rounded-lg shadow-md">
+        <!-- 4. Transaction Submission Form - Now full width -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
           <h2 class="text-xl font-semibold mb-4">Submit Transaction</h2>
-          <form id="txForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form id="txForm" class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
               <input type="text" id="txSubject" class="w-full p-2 border border-gray-300 rounded">
@@ -230,7 +255,7 @@ defmodule Kylix.API.Dashboard do
               <label class="block text-sm font-medium text-gray-700 mb-1">Signature (use "valid_sig" for testing)</label>
               <input type="text" id="txSignature" value="valid_sig" class="w-full p-2 border border-gray-300 rounded">
             </div>
-            <div class="md:col-span-2">
+            <div class="md:col-span-3">
               <button type="submit" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">
                 Submit Transaction
               </button>
@@ -260,6 +285,15 @@ defmodule Kylix.API.Dashboard do
 
           // Load transactions button handler
           document.getElementById('loadTxBtn').addEventListener('click', function() {
+            loadTransactions();
+          });
+
+          // Sort order change
+          document.getElementById('txSortOrder').addEventListener('change', function() {
+            loadTransactions();
+          });
+
+          function loadTransactions() {
             fetch('/transactions')
               .then(response => response.json())
               .then(data => {
@@ -267,13 +301,42 @@ defmodule Kylix.API.Dashboard do
                   const tableBody = document.getElementById('txTableBody');
                   tableBody.innerHTML = '';
 
-                  data.data.forEach(tx => {
+                  // Get sort order
+                  const sortOrder = document.getElementById('txSortOrder').value;
+                  let sortedData = [...data.data];
+
+                  // Apply sorting
+                  switch(sortOrder) {
+                    case 'id_asc':
+                      sortedData.sort((a, b) => a.id.localeCompare(b.id));
+                      break;
+                    case 'id_desc':
+                      sortedData.sort((a, b) => b.id.localeCompare(a.id));
+                      break;
+                    case 'timestamp_asc':
+                      sortedData.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                      break;
+                    case 'timestamp_desc':
+                      sortedData.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+                      break;
+                  }
+
+                  sortedData.forEach(tx => {
                     const row = document.createElement('tr');
+                    // Convert timestamp to a more readable format
+                    const timestamp = tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A';
+                    // Truncate hash for display
+                    const hashDisplay = tx.hash ? tx.hash.substring(0, 12) + '...' : 'N/A';
+                    const fullHash = tx.hash || 'N/A';
+
                     row.innerHTML = `
                       <td class="px-4 py-2">${tx.id}</td>
                       <td class="px-4 py-2">${tx.subject}</td>
                       <td class="px-4 py-2">${tx.predicate}</td>
                       <td class="px-4 py-2">${tx.object}</td>
+                      <td class="px-4 py-2">${tx.validator || 'N/A'}</td>
+                      <td class="px-4 py-2">${timestamp}</td>
+                      <td class="px-4 py-2 tooltip" title="${fullHash}">${hashDisplay}</td>
                     `;
                     tableBody.appendChild(row);
                   });
@@ -282,7 +345,7 @@ defmodule Kylix.API.Dashboard do
                 }
               })
               .catch(error => console.error('Error loading transactions:', error));
-          });
+          }
 
           // Run query button handler
           document.getElementById('runQueryBtn').addEventListener('click', function() {
@@ -372,7 +435,8 @@ defmodule Kylix.API.Dashboard do
                   document.getElementById('txPredicate').value = '';
                   document.getElementById('txObject').value = '';
 
-                  // Refresh benchmark data after new transaction
+                  // Refresh data
+                  loadTransactions();
                   loadBenchmarkData();
                 } else {
                   alert('Error submitting transaction: ' + data.message);
@@ -435,7 +499,8 @@ defmodule Kylix.API.Dashboard do
           // Initialize benchmark charts
           initBenchmarkCharts();
 
-          // Load initial benchmark data
+          // Load initial data
+          loadTransactions();
           loadBenchmarkData();
 
           // Refresh benchmarks button handler
@@ -629,7 +694,8 @@ defmodule Kylix.API.Dashboard do
                       <td class="px-4 py-2">${result.concurrent_connections || 'N/A'}</td>
                       <td class="px-4 py-2">${(result.transactions_per_second || 0).toFixed(2)}</td>
                       <td class="px-4 py-2">${(result.avg_latency_ms || 0).toFixed(2)} ms</td>
-                      <td class="px-4 py-2">${(result.latency_percentiles?.p95 || 0).toFixed(2)} ms</td>
+                      <td class="px-4 py-2">${result.latency_percentiles?.p95 ?
+                                            (result.latency_percentiles.p95).toFixed(2) : 'N/A'} ms</td>
                     `;
                     historyTable.appendChild(row);
                   });
