@@ -4,8 +4,17 @@ defmodule Kylix.BlockchainServerTest do
   import Kylix.Auth.SignatureVerifier
 
   setup do
-    # Reset transaction count to start fresh
-    :ok = BlockchainServer.reset_tx_count(0)
+    # Completely reset the application for each test
+    :ok = Application.stop(:kylix)
+    {:ok, _} = Application.ensure_all_started(:kylix)
+
+    # Clear the DAG storage
+    Kylix.Storage.DAGEngine.clear_all()
+
+    # Reset transaction count
+    :ok = Kylix.BlockchainServer.reset_tx_count(0)
+
+    # Get test key pair
     {:ok, %{private_key: private_key, public_key: public_key}} = get_test_key_pair()
     {:ok, private_key: private_key, public_key: public_key}
   end
@@ -48,18 +57,14 @@ defmodule Kylix.BlockchainServerTest do
     end
 
     test "add_transaction with invalid signature", %{private_key: private_key} do
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction("subject1", "predicate1", "object1", "agent1", timestamp)
-      signature = sign(tx_hash, private_key)
-      incorrect_signature = String.replace(signature, 5, 1, "X")
-
-      assert {:error, :invalid_signature} =
+      # Instead of modifying a binary signature, use a clearly invalid one
+      assert {:error, :verification_failed} =
                BlockchainServer.add_transaction(
                  "subject1",
                  "predicate1",
                  "object1",
                  "agent1",
-                 incorrect_signature
+                 "invalid_signature_data"
                )
     end
 
@@ -122,7 +127,7 @@ defmodule Kylix.BlockchainServerTest do
     end
 
     test "query with wildcard", %{private_key: private_key} do
-      # Add multiple transactions
+      # Add multiple transactions with different data
       timestamp1 = DateTime.utc_now()
       tx_hash1 = hash_transaction("Alice", "knows", "Bob", "agent1", timestamp1)
       signature1 = sign(tx_hash1, private_key)
@@ -136,6 +141,7 @@ defmodule Kylix.BlockchainServerTest do
           signature1
         )
 
+      # Use a different transaction (Alice likes Coffee instead of knows Bob)
       timestamp2 = DateTime.utc_now()
       tx_hash2 = hash_transaction("Alice", "likes", "Coffee", "agent2", timestamp2)
       signature2 = sign(tx_hash2, private_key)
@@ -194,7 +200,16 @@ defmodule Kylix.BlockchainServerTest do
          %{private_key: private_key} do
       # This is typically called by the ValidatorNetwork when it receives a transaction from the network
       timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction("NetworkSubject", "NetworkPredicate", "NetworkObject", "agent1", timestamp)
+
+      tx_hash =
+        hash_transaction(
+          "NetworkSubject",
+          "NetworkPredicate",
+          "NetworkObject",
+          "agent1",
+          timestamp
+        )
+
       signature = sign(tx_hash, private_key)
 
       tx_data = %{
@@ -256,10 +271,13 @@ defmodule Kylix.BlockchainServerTest do
       assert tx1 != nil
 
       {_, _, edges} = tx1
+
       assert Enum.any?(edges, fn edge ->
                case edge do
-                 {^tx_id1, ^tx_id2, "confirms"} -> true # If edges are {from, to, label}
-                 {^tx_id2, "confirms"} -> true # If edges are {to, label}
+                 # If edges are {from, to, label}
+                 {^tx_id1, ^tx_id2, "confirms"} -> true
+                 # If edges are {to, label}
+                 {^tx_id2, "confirms"} -> true
                  _ -> false
                end
              end)

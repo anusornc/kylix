@@ -3,7 +3,17 @@ defmodule KylixTest do
   import Kylix.Auth.SignatureVerifier
 
   setup do
+    # Reset the application for proper test isolation
+    :ok = Application.stop(:kylix)
+    {:ok, _} = Application.ensure_all_started(:kylix)
+
+    # Clear the DAG tables completely (just like in kylix_integration_test)
+    Kylix.Storage.DAGEngine.clear_all()
+
+    # Reset transaction count for a clean state
     :ok = Kylix.BlockchainServer.reset_tx_count(0)
+
+    # Get test key pair
     {:ok, %{private_key: private_key, public_key: public_key}} = get_test_key_pair()
     {:ok, private_key: private_key, public_key: public_key}
   end
