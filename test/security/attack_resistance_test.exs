@@ -1,16 +1,16 @@
 defmodule Kylix.Security.AttackResistanceTest do
   use ExUnit.Case
   alias Kylix.Storage.DAGEngine
-  alias Kylix.BlockchainServer
+  import Kylix.Auth.SignatureVerifier
 
   setup do
-    # Stop and restart the application with a clean slate
-    :ok = Application.stop(:kylix)
-    {:ok, _} = Application.ensure_all_started(:kylix)
+    :ok = Kylix.BlockchainServer.reset_tx_count(0)
+    {:ok, %{private_key: private_key, public_key: public_key}} = get_test_key_pair()
+    {:ok, private_key: private_key, public_key: public_key}
+  end
 
-    # Reset transaction count
-    :ok = BlockchainServer.reset_tx_count(0)
-    :ok
+  defp get_test_key_pair() do
+    GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
   end
 
   describe "signature verification attacks" do
@@ -43,14 +43,17 @@ defmodule Kylix.Security.AttackResistanceTest do
       assert {:error, :invalid_signature} = result
     end
 
-    test "rejects transaction with altered signature" do
+    test "rejects transaction with altered signature", %{private_key: private_key} do
       # First, create a valid transaction
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction("original_subject", "original_predicate", "original_object", "agent1", timestamp)
+      signature = sign(tx_hash, private_key)
       {:ok, tx_id} = Kylix.add_transaction(
         "original_subject",
         "original_predicate",
         "original_object",
         "agent1",
-        "valid_sig"
+        signature
       )
 
       # Retrieve the signature from the stored transaction
@@ -72,14 +75,17 @@ defmodule Kylix.Security.AttackResistanceTest do
   end
 
   describe "transaction replay attacks" do
-    test "prevents exact transaction replay" do
+    test "prevents exact transaction replay", %{private_key: private_key} do
       # Add a transaction
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction("subject", "predicate", "object", "agent1", timestamp)
+      signature = sign(tx_hash, private_key)
       {:ok, _} = Kylix.add_transaction(
         "subject",
         "predicate",
         "object",
         "agent1",
-        "valid_sig"
+        signature
       )
 
       # Try to add the exact same transaction again
@@ -88,30 +94,35 @@ defmodule Kylix.Security.AttackResistanceTest do
         "predicate",
         "object",
         "agent1",
-        "valid_sig"
+        signature
       )
 
       # Should reject as duplicate
       assert {:error, :duplicate_transaction} = result
     end
 
-    test "allows different RDF triples with the same subject" do
+    test "allows different RDF triples with the same subject", %{private_key: private_key} do
       # Add first transaction with subject
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction("entity:document1", "prov:wasGeneratedBy", "activity:process1", "agent1", timestamp)
+      signature = sign(tx_hash, private_key)
       {:ok, _} = Kylix.add_transaction(
         "entity:document1",
         "prov:wasGeneratedBy",
         "activity:process1",
         "agent1",
-        "valid_sig"
+        signature
       )
 
       # Add second transaction with same subject but different predicate/object
+      tx_hash = hash_transaction("entity:document1", "prov:wasAttributedTo", "agent:user1", "agent2", timestamp)
+      signature = sign(tx_hash, private_key)
       result = Kylix.add_transaction(
         "entity:document1",
         "prov:wasAttributedTo",
         "agent:user1",
         "agent2",
-        "valid_sig"
+        signature
       )
 
       # Should allow this as it's a different RDF triple
@@ -120,14 +131,17 @@ defmodule Kylix.Security.AttackResistanceTest do
   end
 
   describe "validator impersonation attacks" do
-    test "rejects transaction from impersonated validator" do
+    test "rejects transaction from impersonated validator", %{private_key: private_key} do
       # Attempt to use a validator that exists but shouldn't be accessible to us
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction("subject", "predicate", "object", "agent1", timestamp)
+      signature = sign(tx_hash, private_key)
       result = Kylix.add_transaction(
         "subject",
         "predicate",
         "object",
         "agent1",  # Valid validator
-        "fake_signature_pretending_to_be_agent1"  # But with fake signature
+        signature  # But with fake signature
       )
 
       # Should reject due to signature validation
@@ -150,44 +164,54 @@ defmodule Kylix.Security.AttackResistanceTest do
   describe "RDF structural attacks" do
     test "rejects invalid RDF structures" do
       # Test with empty subject
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction("", "predicate", "object", "agent1", timestamp)
+      signature = sign(tx_hash, :private_key)
       result1 = Kylix.add_transaction(
         "",
         "predicate",
         "object",
         "agent1",
-        "valid_sig"
+        signature
       )
       assert {:error, :invalid_subject} = result1
 
       # Test with empty predicate
+      tx_hash = hash_transaction("subject", "", "object", "agent1", timestamp)
+      signature = sign(tx_hash, :private_key)
       result2 = Kylix.add_transaction(
         "subject",
         "",
         "object",
         "agent1",
-        "valid_sig"
+        signature
       )
       assert {:error, :invalid_predicate} = result2
 
       # Test with empty object
+      tx_hash = hash_transaction("subject", "predicate", "", "agent1", timestamp)
+      signature = sign(tx_hash, :private_key)
       result3 = Kylix.add_transaction(
         "subject",
         "predicate",
         "",
         "agent1",
-        "valid_sig"
+        signature
       )
       assert {:error, :invalid_object} = result3
     end
 
-    test "validates PROV-O relationships" do
+    test "validates PROV-O relationships", %{private_key: private_key} do
       # Test incorrect entity-activity relationship
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction("activity:process1", "prov:wasGeneratedBy", "entity:document1", "agent1", timestamp)
+      signature = sign(tx_hash, private_key)
       result = Kylix.add_transaction(
         "activity:process1",  # Should be entity, not activity
         "prov:wasGeneratedBy",
         "entity:document1",  # Should be activity, not entity
         "agent1",
-        "valid_sig"
+        signature
       )
 
       # Should reject due to invalid PROV-O relationship
@@ -196,14 +220,17 @@ defmodule Kylix.Security.AttackResistanceTest do
   end
 
   describe "malformed transaction attacks" do
-    test "handles malformed subject gracefully" do
+    test "handles malformed subject gracefully", %{private_key: private_key} do
       # Subject with potentially problematic characters
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction("<script>alert('xss')</script>", "predicate", "object", "agent1", timestamp)
+      signature = sign(tx_hash, private_key)
       result = Kylix.add_transaction(
         "<script>alert('xss')</script>",  # Attempt at injection
         "predicate",
         "object",
         "agent1",
-        "valid_sig"
+        signature
       )
 
       # The system should either sanitize the input or accept it safely
@@ -220,9 +247,12 @@ defmodule Kylix.Security.AttackResistanceTest do
       end
     end
 
-    test "rejects oversized transaction data" do
+    test "rejects oversized transaction data", %{private_key: private_key} do
       # Create a very large string as subject
       large_subject = String.duplicate("A", 1_100_000)  # 1.1MB of data
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction(large_subject, "predicate", "object", "agent1", timestamp)
+      signature = sign(tx_hash, private_key)
 
       # Attempt to add transaction with very large data
       result = Kylix.add_transaction(
@@ -230,7 +260,7 @@ defmodule Kylix.Security.AttackResistanceTest do
         "predicate",
         "object",
         "agent1",
-        "valid_sig"
+        signature
       )
 
       # Should reject due to size limits

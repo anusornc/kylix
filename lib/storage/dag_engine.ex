@@ -70,6 +70,7 @@ defmodule Kylix.Storage.DAGEngine do
     end
   end
 
+
   @impl true
   def handle_call({:add_edge, from_id, to_id, label}, _from, state) do
     if :ets.member(@table, from_id) and :ets.member(@table, to_id) do

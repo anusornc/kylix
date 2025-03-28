@@ -4,9 +4,6 @@ defmodule Kylix.Auth.SignatureVerifier do
   Uses public key cryptography to verify that transactions are authorized.
   """
 
-  # Use a suitable cryptographic library
-  # For example, you might use :crypto or a wrapper like ExPublicKey
-
   @doc """
   Verifies a digital signature against the provided data and public key.
 
@@ -58,5 +55,26 @@ defmodule Kylix.Auth.SignatureVerifier do
       {validator_id, key_data}
     end)
     |> Enum.into(%{})
+  end
+
+  @doc """
+  Generates an RSA key pair for testing.
+
+  ## Returns
+
+  - {:ok, {public_key, private_key}} on success
+  - {:error, reason} on failure
+  """
+  def generate_test_key_pair do
+    {public_key, private_key} = :crypto.generate_key(:rsa, {2048, 65537})
+    {:ok, {public_key, private_key}}
+  end
+
+  @doc """
+  Signs data with the provided private key.
+  """
+  def sign(data, private_key) do
+    data_hash = :crypto.hash(:sha256, data)
+    :crypto.sign(:rsa, :sha256, data_hash, private_key)
   end
 end

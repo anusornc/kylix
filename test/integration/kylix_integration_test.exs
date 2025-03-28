@@ -4,22 +4,24 @@ defmodule Kylix.Integration.KylixIntegrationTest do
   # Import required modules for testing
   alias Kylix.Storage.DAGEngine
   alias Kylix.BlockchainServer
- 
+
   # We'll create our own mock SparqlEngine in the test
   alias Kylix.Auth.SignatureVerifier
 
   setup do
     # Reset the application for each test
-    :ok = Application.stop(:kylix)
+    # :ok = Application.stop(:kylix)
     {:ok, _} = Application.ensure_all_started(:kylix)
 
     # Reset transaction count
-    :ok = BlockchainServer.reset_tx_count(0)
+    {:ok, server} = start_supervised(Kylix.BlockchainServer)
+    :ok = BlockchainServer.reset_tx_count(server,0)
+    {:ok, %{private_key: private_key, public_key: public_key}} = get_test_key_pair(server)
+    {:ok, server: server, private_key: private_key, public_key: public_key}
+  end
 
-    # Don't set up mocks in the global setup to avoid issues with teardown
-    # Each test that needs mocking will set it up individually
-
-    :ok
+  defp get_test_key_pair(server) do
+    GenServer.call(server, :get_test_key_pair)
   end
 
   describe "end-to-end transaction workflow" do
