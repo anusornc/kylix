@@ -56,7 +56,7 @@ defmodule Kylix.BlockchainServerTest do
                )
     end
 
-    test "add_transaction with invalid signature", %{private_key: private_key} do
+    test "add_transaction with invalid signature", %{private_key: _private_key} do
       # Instead of modifying a binary signature, use a clearly invalid one
       assert {:error, :verification_failed} =
                BlockchainServer.add_transaction(
