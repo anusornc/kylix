@@ -10,19 +10,28 @@ defmodule Kylix.Integration.KylixIntegrationTest do
 
   setup do
     # Reset the application for each test
-    # :ok = Application.stop(:kylix)
+    Application.stop(:kylix)
     {:ok, _} = Application.ensure_all_started(:kylix)
 
+    # Get the existing server process
+    server = Process.whereis(Kylix.BlockchainServer)
+
+    # Clear the DAG tables using the proper method
+    Kylix.Storage.DAGEngine.clear_all()
+
     # Reset transaction count
-    {:ok, server} = start_supervised(Kylix.BlockchainServer)
-    :ok = BlockchainServer.reset_tx_count(server,0)
-    {:ok, %{private_key: private_key, public_key: public_key}} = get_test_key_pair(server)
+    :ok = BlockchainServer.reset_tx_count(0)
+
+    # Get test key pair using GenServer.call directly
+    {:ok, %{private_key: private_key, public_key: public_key}} =
+      GenServer.call(server, :get_test_key_pair)
+
     {:ok, server: server, private_key: private_key, public_key: public_key}
   end
 
-  defp get_test_key_pair(server) do
-    GenServer.call(server, :get_test_key_pair)
-  end
+  # defp get_test_key_pair(server) do
+  #   GenServer.call(server, :get_test_key_pair)
+  # end
 
   describe "end-to-end transaction workflow" do
     test "add transaction, verify storage, and query" do
@@ -31,7 +40,8 @@ defmodule Kylix.Integration.KylixIntegrationTest do
       predicate = "owns"
       object = "Car123"
 
-      assert {:ok, tx_id} = Kylix.add_transaction(subject, predicate, object, "agent1", "valid_sig")
+      assert {:ok, tx_id} =
+               Kylix.add_transaction(subject, predicate, object, "agent1", "valid_sig")
 
       # 2. Verify transaction was stored in DAG
       assert {:ok, node_data} = DAGEngine.get_node(tx_id)
@@ -65,10 +75,13 @@ defmodule Kylix.Integration.KylixIntegrationTest do
     test "add multiple transactions, verify linkage and query across transactions" do
       # 1. Add several related transactions
       {:ok, tx_id1} = Kylix.add_transaction("Alice", "owns", "Car123", "agent1", "valid_sig")
-      Process.sleep(10) # Ensure unique timestamps
+      # Ensure unique timestamps
+      Process.sleep(10)
       {:ok, tx_id2} = Kylix.add_transaction("Alice", "drives", "Car123", "agent2", "valid_sig")
       Process.sleep(10)
-      {:ok, tx_id3} = Kylix.add_transaction("Bob", "manufactures", "Car123", "agent1", "valid_sig")
+
+      {:ok, tx_id3} =
+        Kylix.add_transaction("Bob", "manufactures", "Car123", "agent1", "valid_sig")
 
       # 2. Check transaction linkage in DAG
       # All transactions should be linked in sequence
@@ -90,17 +103,17 @@ defmodule Kylix.Integration.KylixIntegrationTest do
 
       # Verify tx1 has an edge to tx2
       assert Enum.any?(tx1_edges, fn
-        {^tx_id1, ^tx_id2, "confirms"} -> true
-        {^tx_id2, "confirms"} -> true
-        _ -> false
-      end)
+               {^tx_id1, ^tx_id2, "confirms"} -> true
+               {^tx_id2, "confirms"} -> true
+               _ -> false
+             end)
 
       # Verify tx2 has an edge to tx3
       assert Enum.any?(tx2_edges, fn
-        {^tx_id2, ^tx_id3, "confirms"} -> true
-        {^tx_id3, "confirms"} -> true
-        _ -> false
-      end)
+               {^tx_id2, ^tx_id3, "confirms"} -> true
+               {^tx_id3, "confirms"} -> true
+               _ -> false
+             end)
 
       # 3. Query by object to find all related transactions
       {:ok, car_results} = Kylix.query({nil, nil, "Car123"})
@@ -128,7 +141,14 @@ defmodule Kylix.Integration.KylixIntegrationTest do
       assert new_validator in updated_validators
 
       # 4. Use the new validator to add a transaction
-      {:ok, tx_id} = Kylix.add_transaction("TestSubject", "TestPredicate", "TestObject", new_validator, "valid_sig")
+      {:ok, tx_id} =
+        Kylix.add_transaction(
+          "TestSubject",
+          "TestPredicate",
+          "TestObject",
+          new_validator,
+          "valid_sig"
+        )
 
       # 5. Verify the transaction was added with the correct validator
       {:ok, node_data} = DAGEngine.get_node(tx_id)
@@ -169,6 +189,7 @@ defmodule Kylix.Integration.KylixIntegrationTest do
               o = if String.starts_with?(o, "?"), do: nil, else: String.trim(o, "\"")
 
               {s, p, o}
+
             nil ->
               raise "Invalid SPARQL query format"
           end
@@ -253,9 +274,12 @@ defmodule Kylix.Integration.KylixIntegrationTest do
       timestamp = DateTime.utc_now()
 
       # 2. Hash the transaction
-      tx_hash = SignatureVerifier.hash_transaction(subject, predicate, object, validator, timestamp)
+      tx_hash =
+        SignatureVerifier.hash_transaction(subject, predicate, object, validator, timestamp)
+
       assert is_binary(tx_hash)
-      assert byte_size(tx_hash) == 32  # SHA-256 hash should be 32 bytes
+      # SHA-256 hash should be 32 bytes
+      assert byte_size(tx_hash) == 32
 
       # 3. Verify a transaction can be added without mocking
       {:ok, tx_id} = Kylix.add_transaction(subject, predicate, object, validator, "valid_sig")
@@ -290,19 +314,23 @@ defmodule Kylix.Integration.KylixIntegrationTest do
 
       # Verify edges exist in the correct order
       # Check if tx1 has an edge to tx2
-      tx1_to_tx2 = Enum.any?(tx1_edges, fn
-        {^tx1, ^tx2, "confirms"} -> true
-        {^tx2, "confirms"} -> true
-        _ -> false
-      end)
+      tx1_to_tx2 =
+        Enum.any?(tx1_edges, fn
+          {^tx1, ^tx2, "confirms"} -> true
+          {^tx2, "confirms"} -> true
+          _ -> false
+        end)
+
       assert tx1_to_tx2
 
       # Check if tx2 has an edge to tx3
-      tx2_to_tx3 = Enum.any?(tx2_edges, fn
-        {^tx2, ^tx3, "confirms"} -> true
-        {^tx3, "confirms"} -> true
-        _ -> false
-      end)
+      tx2_to_tx3 =
+        Enum.any?(tx2_edges, fn
+          {^tx2, ^tx3, "confirms"} -> true
+          {^tx3, "confirms"} -> true
+          _ -> false
+        end)
+
       assert tx2_to_tx3
     end
   end
@@ -314,13 +342,14 @@ defmodule Kylix.Integration.KylixIntegrationTest do
       {:ok, ^new_validator} = Kylix.add_validator(new_validator, "pubkey", "agent1")
 
       # 2. Add a transaction through the public API
-      {:ok, tx_id} = Kylix.add_transaction(
-        "IntegrationSubject",
-        "IntegrationPredicate",
-        "IntegrationObject",
-        new_validator,
-        "valid_sig"
-      )
+      {:ok, tx_id} =
+        Kylix.add_transaction(
+          "IntegrationSubject",
+          "IntegrationPredicate",
+          "IntegrationObject",
+          new_validator,
+          "valid_sig"
+        )
 
       # 3. In a real implementation, we would verify network broadcast
       # Skip this check as we don't have direct access to that functionality

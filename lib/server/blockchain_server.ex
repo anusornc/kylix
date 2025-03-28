@@ -126,6 +126,20 @@ defmodule Kylix.BlockchainServer do
     end
   end
 
+  @impl true
+  def handle_call({:query, pattern}, _from, state) do
+    # Forward to the Coordinator for proper query handling
+    case Kylix.Storage.Coordinator.query(pattern) do
+      {:ok, results} -> {:reply, {:ok, results}, state}
+      other -> {:reply, other, state}
+    end
+  end
+
+  @impl true
+  def handle_call(:get_validators, _from, state) do
+    {:reply, state.validators, state}
+  end
+
   # Initialize the server state with transaction count and validators
   @impl true
   def init(opts) do
@@ -208,29 +222,35 @@ defmodule Kylix.BlockchainServer do
                     # Special case for test environment - different handling based on the signature
                     if Mix.env() == :test do
                       timestamp = DateTime.utc_now()
-                      tx_hash = Kylix.Auth.SignatureVerifier.hash_transaction(
-                        s, p, o, validator_id, timestamp
-                      )
+
+                      tx_hash =
+                        Kylix.Auth.SignatureVerifier.hash_transaction(
+                          s,
+                          p,
+                          o,
+                          validator_id,
+                          timestamp
+                        )
 
                       cond do
                         # These patterns are for test cases that explicitly expect verification to fail
                         signature == "invalid_signature_data" ||
-                        signature == "" ->
+                            signature == "" ->
                           {{:error, :verification_failed}, state}
 
                         # Detect when we're on the original vs. altered test
                         s == "altered_subject" &&
-                        p == "original_predicate" &&
-                        o == "original_object" ->
+                          p == "original_predicate" &&
+                            o == "original_object" ->
                           {{:error, :verification_failed}, state}
 
                         # For signatures that appear to have been manipulated
                         is_binary(signature) &&
-                        byte_size(signature) > 10 &&
-                        :binary.match(signature, <<88>>) != :nomatch &&
-                        s == "subject" &&
-                        p == "predicate" &&
-                        o == "object" ->
+                          byte_size(signature) > 10 &&
+                          :binary.match(signature, <<88>>) != :nomatch &&
+                          s == "subject" &&
+                          p == "predicate" &&
+                            o == "object" ->
                           {{:error, :verification_failed}, state}
 
                         # All other cases in test mode should successfully add the transaction
@@ -255,7 +275,9 @@ defmodule Kylix.BlockchainServer do
                           # Link to previous transaction if not the first
                           if state.tx_count > 0 do
                             prev_tx_id = "tx#{state.tx_count}"
-                            :ok = Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
+
+                            :ok =
+                              Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
                           end
 
                           # Update state

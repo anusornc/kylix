@@ -41,6 +41,20 @@ defmodule Kylix.Storage.DAGEngine do
     {:ok, %{}}
   end
 
+  # Add this public function to the DAGEngine module
+  def clear_all(), do: GenServer.call(__MODULE__, :clear_all)
+
+  # Add this handle_call implementation
+  @impl true
+  def handle_call(:clear_all, _from, state) do
+    :ets.delete_all_objects(@table)
+    :ets.delete_all_objects(@edge_table)
+    :ets.delete_all_objects(:subject_index)
+    :ets.delete_all_objects(:predicate_index)
+    :ets.delete_all_objects(:object_index)
+    {:reply, :ok, state}
+  end
+
   @impl true
   def handle_call({:add_node, node_id, data}, _from, state) do
     require Logger
@@ -69,7 +83,6 @@ defmodule Kylix.Storage.DAGEngine do
       {:reply, :ok, state}
     end
   end
-
 
   @impl true
   def handle_call({:add_edge, from_id, to_id, label}, _from, state) do
@@ -107,44 +120,45 @@ defmodule Kylix.Storage.DAGEngine do
     Logger.info("Querying with pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
 
     # Get matched nodes using indexes when possible
-    matched_nodes = cond do
-      # Subject is specified - use subject index (most selective)
-      s != nil ->
-        :ets.lookup(:subject_index, s)
-        |> Enum.map(fn {_, node_id} ->
-          case :ets.lookup(@table, node_id) do
-            [{^node_id, data}] -> {node_id, data}
-            _ -> nil
-          end
-        end)
-        |> Enum.filter(&(&1 != nil))
+    matched_nodes =
+      cond do
+        # Subject is specified - use subject index (most selective)
+        s != nil ->
+          :ets.lookup(:subject_index, s)
+          |> Enum.map(fn {_, node_id} ->
+            case :ets.lookup(@table, node_id) do
+              [{^node_id, data}] -> {node_id, data}
+              _ -> nil
+            end
+          end)
+          |> Enum.filter(&(&1 != nil))
 
-      # Object is specified - use object index (second most selective)
-      o != nil ->
-        :ets.lookup(:object_index, o)
-        |> Enum.map(fn {_, node_id} ->
-          case :ets.lookup(@table, node_id) do
-            [{^node_id, data}] -> {node_id, data}
-            _ -> nil
-          end
-        end)
-        |> Enum.filter(&(&1 != nil))
+        # Object is specified - use object index (second most selective)
+        o != nil ->
+          :ets.lookup(:object_index, o)
+          |> Enum.map(fn {_, node_id} ->
+            case :ets.lookup(@table, node_id) do
+              [{^node_id, data}] -> {node_id, data}
+              _ -> nil
+            end
+          end)
+          |> Enum.filter(&(&1 != nil))
 
-      # Predicate is specified - use predicate index (least selective)
-      p != nil ->
-        :ets.lookup(:predicate_index, p)
-        |> Enum.map(fn {_, node_id} ->
-          case :ets.lookup(@table, node_id) do
-            [{^node_id, data}] -> {node_id, data}
-            _ -> nil
-          end
-        end)
-        |> Enum.filter(&(&1 != nil))
+        # Predicate is specified - use predicate index (least selective)
+        p != nil ->
+          :ets.lookup(:predicate_index, p)
+          |> Enum.map(fn {_, node_id} ->
+            case :ets.lookup(@table, node_id) do
+              [{^node_id, data}] -> {node_id, data}
+              _ -> nil
+            end
+          end)
+          |> Enum.filter(&(&1 != nil))
 
-      # No components specified - use full scan
-      true ->
-        :ets.tab2list(@table)
-    end
+        # No components specified - use full scan
+        true ->
+          :ets.tab2list(@table)
+      end
 
     Logger.info("All matched nodes: #{inspect(matched_nodes)}")
 
