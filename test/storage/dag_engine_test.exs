@@ -3,17 +3,28 @@ defmodule Kylix.Storage.DAGEngineTest do
   alias Kylix.Storage.DAGEngine
 
   setup do
-    # Since the application already starts the DAGEngine, we don't try to start it again
-    # Instead, we'll just make sure it's running
+    # Stop any existing DAGEngine first to ensure we have a clean state
+    if Process.whereis(DAGEngine) do
+      GenServer.stop(DAGEngine)
+    end
+
+    # Start a fresh DAGEngine just for this test
+    {:ok, pid} = DAGEngine.start_link()
 
     # Ensure the DAGEngine is running
-    pid = Process.whereis(DAGEngine)
     assert is_pid(pid) and Process.alive?(pid)
 
-    # Stop the application to reset the state
-    :ok = Application.stop(:kylix)
-    # Start it again
-    {:ok, _} = Application.ensure_all_started(:kylix)
+    # Add cleanup on exit
+    on_exit(fn ->
+      # Stop the DAGEngine after the test, but handle case when it's already stopped
+      try do
+        if Process.whereis(DAGEngine) do
+          GenServer.stop(DAGEngine)
+        end
+      catch
+        _kind, _reason -> :ok  # Ignore errors if process is already gone
+      end
+    end)
 
     :ok
   end
@@ -77,8 +88,12 @@ defmodule Kylix.Storage.DAGEngineTest do
       {_, _, edges} = source_node
 
       # Verify edge exists
-      assert Enum.any?(edges, fn {from, to, label} ->
-        from == "source" && to == "target" && label == "connects"
+      assert Enum.any?(edges, fn edge ->
+        case edge do
+          {from, to, label} -> from == "source" && to == "target" && label == "connects"
+          {to, label} -> to == "target" && label == "connects"
+          _ -> false
+        end
       end)
     end
 

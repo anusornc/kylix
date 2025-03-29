@@ -18,7 +18,11 @@ defmodule Kylix.Server.TransactionQueueTest do
 
     # Stop any existing TransactionQueue
     if Process.whereis(TransactionQueue) do
-      GenServer.stop(TransactionQueue)
+      try do
+        GenServer.stop(TransactionQueue)
+      catch
+        _kind, _reason -> :ok  # Ignore errors if process is already gone
+      end
     end
 
     # Start the queue with fast processing for tests

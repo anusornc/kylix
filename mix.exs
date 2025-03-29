@@ -14,7 +14,10 @@ defmodule Kylix.MixProject do
 
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :observer, :wx, :runtime_tools],
+      # :observer is used for monitoring the application
+      # :logger is used for logging
+      # :kylix is the main application module
       mod: {Kylix.Application, []}
     ]
   end
