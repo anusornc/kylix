@@ -5,6 +5,7 @@ defmodule Kylix.Benchmark.TransactionSpeed do
   """
 
   @output_dir "data/benchmark"
+  import Kylix.Auth.SignatureVerifier
 
   def run_baseline_test(num_transactions \\ 1000) do
     ensure_output_dir()
@@ -13,12 +14,14 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     # :ok = Application.stop(:kylix)
     {:ok, _} = Application.ensure_all_started(:kylix)
 
+    # Get test key pair with fallback to generating a new one
+    {:ok, %{private_key: private_key, public_key: _public_key}} = get_test_key_pair_with_fallback()
+
     # Set up test data
     subject_base = "entity:test"
     predicate = "prov:wasGeneratedBy"
     object_base = "activity:process"
-    validator = "agent1"
-    signature = "valid_sig"
+    validator = "agent1"  # Use a known validator
 
     # Start timing
     start_time = System.monotonic_time(:millisecond)
@@ -29,6 +32,11 @@ defmodule Kylix.Benchmark.TransactionSpeed do
       subject = "#{subject_base}#{i}"
       object = "#{object_base}#{i}"
 
+      # Generate proper signature for each transaction
+      timestamp = DateTime.utc_now()
+      tx_hash = hash_transaction(subject, predicate, object, validator, timestamp)
+      signature = sign(tx_hash, private_key)
+
       # Add transaction and measure time
       tx_start = System.monotonic_time(:microsecond)
       result = Kylix.add_transaction(subject, predicate, object, validator, signature)
@@ -37,6 +45,14 @@ defmodule Kylix.Benchmark.TransactionSpeed do
 
       # Log progress every 100 transactions
       if rem(i, 100) == 0, do: IO.puts("Completed #{i} transactions. Last took #{tx_time}μs")
+
+      # Log success/failure
+      case result do
+        {:ok, tx_id} ->
+          IO.puts("Transaction #{i} successful with ID: #{tx_id}")
+        {:error, reason} ->
+          IO.puts("Transaction #{i} failed: #{inspect(reason)}")
+      end
 
       {result, tx_time}
     end)
@@ -51,7 +67,7 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     avg_tx_time = Enum.sum(transaction_times) / num_transactions
 
     # Calculate TPS (Transactions Per Second)
-    tps = successful_txs / (total_time / 1000)
+    tps = if total_time > 0, do: successful_txs / (total_time / 1000), else: 0.0
 
     # Prepare result data
     result = %{
@@ -78,8 +94,25 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     result
   end
 
-  # Additional functions like parallel_test, scaling_test, etc.
-  # I've omitted these for brevity but they would be similar to run_baseline_test
+  # Helper function to get test key pair with fallback
+  defp get_test_key_pair_with_fallback() do
+    case get_test_key_pair() do
+      {:ok, %{private_key: private_key, public_key: public_key}} when not is_nil(private_key) ->
+        # Valid key pair from the server
+        {:ok, %{private_key: private_key, public_key: public_key}}
+
+      _ ->
+        # No valid key pair, generate a temporary one
+        IO.puts("No valid test key pair available, generating a temporary one...")
+        {:ok, {public_key, private_key}} = Kylix.Auth.SignatureVerifier.generate_test_key_pair()
+        {:ok, %{private_key: private_key, public_key: public_key}}
+    end
+  end
+
+  # Helper function to get test key pair from the blockchain server
+  defp get_test_key_pair() do
+    GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
+  end
 
   # Helper functions
   defp ensure_output_dir do
