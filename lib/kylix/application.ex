@@ -35,6 +35,9 @@ defmodule Kylix.Application do
       {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},
       {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]},
 
+      # Add the transaction queue
+      {Kylix.Server.TransactionQueue, []},
+
       # Start the CacheSyncJob for periodic cache synchronization
       {Kylix.Storage.CacheSyncJob, []},
 
