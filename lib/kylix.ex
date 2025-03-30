@@ -51,4 +51,27 @@ defmodule Kylix do
   def add_validator(validator_id, pubkey, known_by) do
     Kylix.BlockchainServer.add_validator(validator_id, pubkey, known_by)
   end
+
+   # Add these new functions for validator management
+
+  @doc """
+  Gets the current validator selected for transaction processing.
+  """
+  def get_current_validator do
+    Kylix.Consensus.ValidatorCoordinator.get_current_validator()
+  end
+
+  @doc """
+  Gets performance metrics for all validators.
+  """
+  def get_validator_metrics do
+    Kylix.Consensus.ValidatorCoordinator.get_performance_metrics()
+  end
+
+  @doc """
+  Gets the status of the validator coordination system.
+  """
+  def get_validator_status do
+    Kylix.Consensus.ValidatorCoordinator.status()
+  end
 end

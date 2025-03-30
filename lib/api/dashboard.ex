@@ -230,7 +230,7 @@ defmodule Kylix.API.Dashboard do
         </div>
 
         <!-- 4. Transaction Submission Form - Now full width -->
-        <div class="bg-white p-6 rounded-lg shadow-md">
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
           <h2 class="text-xl font-semibold mb-4">Submit Transaction</h2>
           <form id="txForm" class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -261,6 +261,33 @@ defmodule Kylix.API.Dashboard do
               </button>
             </div>
           </form>
+        </div>
+
+        <!-- 5. Validator Metrics Section -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+        <h2 class="text-xl font-semibold mb-4">Validator Metrics</h2>
+
+        <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead>
+            <tr>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validator</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Txs</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success Rate</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Tx Time</th>
+              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Active</th>
+            </tr>
+          </thead>
+          <tbody id="validatorMetricsBody" class="divide-y divide-gray-200">
+            <!-- Validator metrics will go here -->
+          </tbody>
+        </table>
+        </div>
+
+        <div class="mt-4">
+        <h3 class="font-medium text-gray-700 mb-2">Current Validator</h3>
+        <div id="currentValidator" class="p-2 bg-green-100 rounded inline-block font-medium">Loading...</div>
+        </div>
         </div>
       </div>
 
@@ -716,7 +743,63 @@ defmodule Kylix.API.Dashboard do
               console.error('Error fetching metrics:', error);
             });
         }
+
+        // Function to load validator metrics
+        function loadValidatorMetrics() {
+          fetch('/validator-metrics')
+            .then(response => response.json())
+            .then(data => {
+              if (data.status === 'success') {
+                const tableBody = document.getElementById('validatorMetricsBody');
+                tableBody.innerHTML = '';
+
+                Object.entries(data.data).forEach(([validator, metrics]) => {
+                  const row = document.createElement('tr');
+
+                  // Format timestamp
+                  const lastActive = metrics.last_active ? new Date(metrics.last_active).toLocaleString() : 'N/A';
+
+                  // Calculate success rate
+                  const successRate = metrics.total_transactions > 0
+                    ? ((metrics.successful_transactions / metrics.total_transactions) * 100).toFixed(1)
+                    : 'N/A';
+
+                  // Format avg tx time
+                  const avgTxTime = metrics.avg_tx_time
+                    ? `${metrics.avg_tx_time.toFixed(2)}μs`
+                    : 'N/A';
+
+                  row.innerHTML = `
+                    <td class="px-4 py-2 font-medium">${validator}</td>
+                    <td class="px-4 py-2">${metrics.total_transactions}</td>
+                    <td class="px-4 py-2">${successRate}%</td>
+                    <td class="px-4 py-2">${avgTxTime}</td>
+                    <td class="px-4 py-2">${lastActive}</td>
+                  `;
+
+                  tableBody.appendChild(row);
+                });
+              }
+            })
+            .catch(error => console.error('Error loading validator metrics:', error));
+
+          // Get current validator
+          fetch('/validator-status')
+            .then(response => response.json())
+            .then(data => {
+              if (data.status === 'success') {
+                document.getElementById('currentValidator').textContent =
+                  data.data.current_validator || 'None';
+              }
+            })
+            .catch(error => console.error('Error loading validator status:', error));
+        }
+
+        // Load metrics initially and refresh every 5 seconds
+        loadValidatorMetrics();
+        setInterval(loadValidatorMetrics, 5000);
       </script>
+
     </body>
     </html>
     """

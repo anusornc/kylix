@@ -196,6 +196,18 @@ defmodule Kylix.API.Router do
     end
   end
 
+  # GET /validator-status - Get validator coordination status
+  get "/validator-status" do
+    status = Kylix.get_validator_status()
+    send_json_resp(conn, 200, %{status: "success", data: status})
+  end
+
+  # GET /validator-metrics - Get validator performance metrics
+  get "/validator-metrics" do
+    metrics = Kylix.get_validator_metrics()
+    send_json_resp(conn, 200, %{status: "success", data: metrics})
+  end
+
   # Route for simple web dashboard
   get "/" do
     conn

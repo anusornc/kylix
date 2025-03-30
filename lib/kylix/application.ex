@@ -23,13 +23,14 @@ defmodule Kylix.Application do
 
     # Start both storage engines in all environments
     children = [
-      # Always start the in-memory DAGEngine for fast queries/caching
+      # Storage engines
       {Kylix.Storage.DAGEngine, []},
-
-      # In non-test mode, also start the persistent engine
       if Mix.env() != :test do
         {Kylix.Storage.PersistentDAGEngine, [db_path: db_path]}
       end,
+
+      # Start the ValidatorCoordinator BEFORE the BlockchainServer
+      {Kylix.Consensus.ValidatorCoordinator, [validators: validators, config_dir: validators_dir]},
 
       # Common services across all environments
       {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},

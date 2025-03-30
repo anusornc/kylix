@@ -69,7 +69,12 @@ defmodule Kylix.BlockchainServer do
   # Returns a list of validator identifiers
   @spec get_validators() :: [String.t()]
   def get_validators() do
-    GenServer.call(__MODULE__, :get_validators)
+    # Forward to ValidatorCoordinator if it's running, otherwise use local state
+    if use_coordinator?() do
+      Kylix.Consensus.ValidatorCoordinator.get_validators()
+    else
+      GenServer.call(__MODULE__, :get_validators)
+    end
   end
 
   # Add a new validator to the blockchain
@@ -80,7 +85,12 @@ defmodule Kylix.BlockchainServer do
   @spec add_validator(String.t(), String.t(), String.t()) ::
           {:ok, String.t()} | {:error, atom()}
   def add_validator(validator_id, pubkey, known_by) do
-    GenServer.call(__MODULE__, {:add_validator, validator_id, pubkey, known_by})
+    # Forward to ValidatorCoordinator if it's running, otherwise use local implementation
+    if use_coordinator?() do
+      Kylix.Consensus.ValidatorCoordinator.add_validator(validator_id, pubkey, known_by)
+    else
+      GenServer.call(__MODULE__, {:add_validator, validator_id, pubkey, known_by})
+    end
   end
 
   # Reset the transaction counter to a specific value (used for testing)
@@ -96,7 +106,6 @@ defmodule Kylix.BlockchainServer do
   end
 
   @impl true
-
   def handle_call({:add_transaction, s, p, o, validator_id, signature}, _from, state) do
     {result, new_state} = do_add_transaction(s, p, o, validator_id, signature, state)
     {:reply, result, new_state}
@@ -189,40 +198,143 @@ defmodule Kylix.BlockchainServer do
   # Shared implementation for adding transactions
   # Used by both handle_call and handle_cast to avoid recursive calls
   defp do_add_transaction(s, p, o, validator_id, signature, state) do
+    # Check if ValidatorCoordinator is available for validator checks
+    validator_exists =
+      if use_coordinator?() do
+        Kylix.Consensus.ValidatorCoordinator.validator_exists?(validator_id)
+      else
+        validator_id in state.validators
+      end
+
     # First, check if validator exists
-    case Enum.find(state.validators, fn v -> v == validator_id end) do
-      nil ->
-        {{:error, :unknown_validator}, state}
+    if !validator_exists do
+      {{:error, :unknown_validator}, state}
+    else
+      # Validate RDF structure
+      case validate_rdf_triple(s, p, o) do
+        {:error, reason} ->
+          {{:error, reason}, state}
 
-      _ ->
-        # Validate RDF structure
-        case validate_rdf_triple(s, p, o) do
-          {:error, reason} ->
-            {{:error, reason}, state}
+        :ok ->
+          # Validate data size to prevent DOS attacks
+          if exceeds_max_size?(s, p, o) do
+            {{:error, :data_too_large}, state}
+          else
+            # Check for duplicate transactions - using direct access to storage
+            # rather than making a recursive call
+            duplicate = check_duplicate_direct(s, p, o)
 
-          :ok ->
-            # Validate data size to prevent DOS attacks
-            if exceeds_max_size?(s, p, o) do
-              {{:error, :data_too_large}, state}
+            if duplicate do
+              # Always return duplicate_transaction error regardless of test/prod mode
+              {{:error, :duplicate_transaction}, state}
             else
-              # Check for duplicate transactions - using direct access to storage
-              # rather than making a recursive call
-              duplicate = check_duplicate_direct(s, p, o)
+              # Check for PROV-O relationship validity if applicable
+              case validate_prov_o_relationship(s, p, o) do
+                {:error, reason} ->
+                  {{:error, reason}, state}
 
-              if duplicate do
-                # Always return duplicate_transaction error regardless of test/prod mode
-                {{:error, :duplicate_transaction}, state}
-              else
-                # Check for PROV-O relationship validity if applicable
-                case validate_prov_o_relationship(s, p, o) do
-                  {:error, reason} ->
-                    {{:error, reason}, state}
+                :ok ->
+                  # Special case for test environment - different handling based on the signature
+                  if Mix.env() == :test do
+                    timestamp = DateTime.utc_now()
 
-                  :ok ->
-                    # Special case for test environment - different handling based on the signature
-                    if Mix.env() == :test do
+                    tx_hash =
+                      Kylix.Auth.SignatureVerifier.hash_transaction(
+                        s,
+                        p,
+                        o,
+                        validator_id,
+                        timestamp
+                      )
+
+                    cond do
+                      # These patterns are for test cases that explicitly expect verification to fail
+                      signature == "invalid_signature_data" ||
+                          signature == "" ->
+                        {{:error, :verification_failed}, state}
+
+                      # Detect when we're on the original vs. altered test
+                      s == "altered_subject" &&
+                        p == "original_predicate" &&
+                          o == "original_object" ->
+                        {{:error, :verification_failed}, state}
+
+                      # For signatures that appear to have been manipulated
+                      is_binary(signature) &&
+                        byte_size(signature) > 10 &&
+                        :binary.match(signature, <<88>>) != :nomatch &&
+                        s == "subject" &&
+                        p == "predicate" &&
+                          o == "object" ->
+                        {{:error, :verification_failed}, state}
+
+                      # All other cases in test mode should successfully add the transaction
+                      true ->
+                        # Create transaction ID
+                        tx_id = "tx#{state.tx_count + 1}"
+
+                        # Create transaction data
+                        tx_data = %{
+                          subject: s,
+                          predicate: p,
+                          object: o,
+                          validator: validator_id,
+                          signature: signature,
+                          timestamp: timestamp,
+                          hash: Base.encode16(tx_hash)
+                        }
+
+                        # Add to storage using Coordinator
+                        :ok = Kylix.Storage.Coordinator.add_node(tx_id, tx_data)
+
+                        # Link to previous transaction if not the first
+                        if state.tx_count > 0 do
+                          prev_tx_id = "tx#{state.tx_count}"
+
+                          :ok =
+                            Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
+                        end
+
+                        # Update state
+                        new_state = %{
+                          state
+                          | tx_count: state.tx_count + 1,
+                            last_block_time: timestamp
+                        }
+
+                        {{:ok, tx_id}, new_state}
+                    end
+                  else
+                    # Production behavior - check turns, verify signatures, etc.
+                    # Get the current validator either from coordinator or local state
+                    current_validator =
+                      if use_coordinator?() do
+                        # Use the coordinator to get the current validator
+                        Kylix.Consensus.ValidatorCoordinator.get_current_validator()
+                      else
+                        # Fall back to existing round-robin logic
+                        Enum.at(state.validators, rem(state.tx_count, length(state.validators)))
+                      end
+
+                    # Start performance timing
+                    start_time = System.monotonic_time(:microsecond)
+
+                    if current_validator == validator_id do
+                      # Create timestamp
                       timestamp = DateTime.utc_now()
 
+                      # Get public key - check coordinator first, then local state
+                      public_key =
+                        if use_coordinator?() do
+                          case Kylix.Consensus.ValidatorCoordinator.get_validator_key(validator_id) do
+                            {:ok, key} -> key
+                            _ -> Map.get(state.public_keys, validator_id)
+                          end
+                        else
+                          Map.get(state.public_keys, validator_id)
+                        end
+
+                      # Verify signature
                       tx_hash =
                         Kylix.Auth.SignatureVerifier.hash_transaction(
                           s,
@@ -232,33 +344,11 @@ defmodule Kylix.BlockchainServer do
                           timestamp
                         )
 
-                      cond do
-                        # These patterns are for test cases that explicitly expect verification to fail
-                        signature == "invalid_signature_data" ||
-                            signature == "" ->
-                          {{:error, :verification_failed}, state}
-
-                        # Detect when we're on the original vs. altered test
-                        s == "altered_subject" &&
-                          p == "original_predicate" &&
-                            o == "original_object" ->
-                          {{:error, :verification_failed}, state}
-
-                        # For signatures that appear to have been manipulated
-                        is_binary(signature) &&
-                          byte_size(signature) > 10 &&
-                          :binary.match(signature, <<88>>) != :nomatch &&
-                          s == "subject" &&
-                          p == "predicate" &&
-                            o == "object" ->
-                          {{:error, :verification_failed}, state}
-
-                        # All other cases in test mode should successfully add the transaction
-                        true ->
-                          # Create transaction ID
+                      case Kylix.Auth.SignatureVerifier.verify(tx_hash, signature, public_key) do
+                        :ok ->
+                          # Signature valid, proceed with transaction
                           tx_id = "tx#{state.tx_count + 1}"
 
-                          # Create transaction data
                           tx_data = %{
                             subject: s,
                             predicate: p,
@@ -272,12 +362,25 @@ defmodule Kylix.BlockchainServer do
                           # Add to storage using Coordinator
                           :ok = Kylix.Storage.Coordinator.add_node(tx_id, tx_data)
 
-                          # Link to previous transaction if not the first
+                          # Link to previous transaction
                           if state.tx_count > 0 do
                             prev_tx_id = "tx#{state.tx_count}"
 
                             :ok =
                               Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
+                          end
+
+                          # Calculate processing time
+                          end_time = System.monotonic_time(:microsecond)
+                          tx_time = end_time - start_time
+
+                          # Record successful transaction if coordinator is available
+                          if use_coordinator?() do
+                            Kylix.Consensus.ValidatorCoordinator.record_transaction_performance(
+                              validator_id,
+                              true,
+                              tx_time
+                            )
                           end
 
                           # Update state
@@ -288,81 +391,40 @@ defmodule Kylix.BlockchainServer do
                           }
 
                           {{:ok, tx_id}, new_state}
-                      end
-                    else
-                      # Production behavior - check turns, verify signatures, etc.
-                      # Check if it's this validator's turn
-                      current_validator =
-                        Enum.at(state.validators, rem(state.tx_count, length(state.validators)))
 
-                      if current_validator == validator_id do
-                        # Create timestamp
-                        timestamp = DateTime.utc_now()
-
-                        # Verify signature
-                        tx_hash =
-                          Kylix.Auth.SignatureVerifier.hash_transaction(
-                            s,
-                            p,
-                            o,
-                            validator_id,
-                            timestamp
+                        {:error, reason} ->
+                          # Invalid signature
+                          Logger.warning(
+                            "Invalid signature from validator #{validator_id}: #{reason}"
                           )
 
-                        public_key = Map.get(state.public_keys, validator_id)
-
-                        case Kylix.Auth.SignatureVerifier.verify(tx_hash, signature, public_key) do
-                          :ok ->
-                            # Signature valid, proceed with transaction
-                            tx_id = "tx#{state.tx_count + 1}"
-
-                            tx_data = %{
-                              subject: s,
-                              predicate: p,
-                              object: o,
-                              validator: validator_id,
-                              signature: signature,
-                              timestamp: timestamp,
-                              hash: Base.encode16(tx_hash)
-                            }
-
-                            # Add to storage using Coordinator
-                            :ok = Kylix.Storage.Coordinator.add_node(tx_id, tx_data)
-
-                            # Link to previous transaction
-                            if state.tx_count > 0 do
-                              prev_tx_id = "tx#{state.tx_count}"
-
-                              :ok =
-                                Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
-                            end
-
-                            # Update state
-                            new_state = %{
-                              state
-                              | tx_count: state.tx_count + 1,
-                                last_block_time: timestamp
-                            }
-
-                            {{:ok, tx_id}, new_state}
-
-                          {:error, reason} ->
-                            # Invalid signature
-                            Logger.warning(
-                              "Invalid signature from validator #{validator_id}: #{reason}"
+                          # Record failed transaction
+                          if use_coordinator?() do
+                            Kylix.Consensus.ValidatorCoordinator.record_transaction_performance(
+                              validator_id,
+                              false
                             )
+                          end
 
-                            {{:error, :invalid_signature}, state}
-                        end
-                      else
-                        # Not this validator's turn
-                        {{:error, :not_your_turn}, state}
+                          {{:error, :invalid_signature}, state}
                       end
+                    else
+                      # Not this validator's turn
+                      # Record failed transaction
+                      if use_coordinator?() do
+                        Kylix.Consensus.ValidatorCoordinator.record_transaction_performance(
+                          validator_id,
+                          false
+                        )
+                      end
+
+                      {{:error, :not_your_turn}, state}
                     end
-                end
+                  end
               end
             end
-        end
+          end
+      end
     end
   end
 
@@ -374,6 +436,14 @@ defmodule Kylix.BlockchainServer do
       # Assume no duplicates on error
       {:error, _reason} -> false
     end
+  end
+
+  # Helper to check if ValidatorCoordinator is running and should be used
+  defp use_coordinator?() do
+    # Check if the ValidatorCoordinator module is available
+    Code.ensure_loaded?(Kylix.Consensus.ValidatorCoordinator) &&
+      # Check if the process is running
+      !is_nil(Process.whereis(Kylix.Consensus.ValidatorCoordinator))
   end
 
   # Enhancement: Add function to check for large data to prevent DOS attacks
