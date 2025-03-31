@@ -28,7 +28,9 @@ defmodule Kylix.Consensus.ValidatorCoordinator do
     validators = Keyword.get(opts, :validators, [])
     config_dir = Keyword.get(opts, :config_dir, @config_dir)
 
-    GenServer.start_link(__MODULE__, [validators: validators, config_dir: config_dir], name: __MODULE__)
+    GenServer.start_link(__MODULE__, [validators: validators, config_dir: config_dir],
+      name: __MODULE__
+    )
   end
 
   @doc """
@@ -158,6 +160,45 @@ defmodule Kylix.Consensus.ValidatorCoordinator do
     {:ok, state}
   end
 
+  # In ValidatorCoordinator module
+
+  # Add this to your ValidatorCoordinator module
+  def reset_coordinator_for_testing(validators, config_dir) do
+    GenServer.call(__MODULE__, {:reset_for_testing, validators, config_dir})
+  end
+
+  # Add this function to your module
+  def set_performance_window_size(size) do
+    GenServer.call(__MODULE__, {:set_window_size, size})
+  end
+
+  # Add this handle_call implementation
+  @impl true
+  def handle_call({:set_window_size, size}, _from, state) do
+    {:reply, :ok, %{state | performance_window: size}}
+  end
+
+  # Add this handle_call implementation
+  @impl true
+  def handle_call({:reset_for_testing, validators, config_dir}, _from, _state) do
+    # Load validator public keys
+    public_keys = Kylix.Auth.SignatureVerifier.load_public_keys(config_dir)
+
+    # Initialize state with test values
+    new_state = %{
+      validators: validators,
+      current_validator_index: 0,
+      public_keys: public_keys,
+      config_dir: config_dir,
+      performance_metrics: initialize_performance_metrics(validators),
+      # default window size
+      performance_window: 100,
+      last_block_time: DateTime.utc_now()
+    }
+
+    {:reply, :ok, new_state}
+  end
+
   @impl true
   def handle_call(:get_current_validator, _from, state) do
     if Enum.empty?(state.validators) do
@@ -203,16 +244,18 @@ defmodule Kylix.Consensus.ValidatorCoordinator do
         save_validator_key(validator_id, public_key, state.config_dir)
 
         # Initialize performance metrics for new validator
-        updated_metrics = Map.put(
-          state.performance_metrics,
-          validator_id,
-          initialize_single_validator_metrics()
-        )
+        updated_metrics =
+          Map.put(
+            state.performance_metrics,
+            validator_id,
+            initialize_single_validator_metrics()
+          )
 
-        updated_state = %{state |
-          validators: updated_validators,
-          public_keys: updated_public_keys,
-          performance_metrics: updated_metrics
+        updated_state = %{
+          state
+          | validators: updated_validators,
+            public_keys: updated_public_keys,
+            performance_metrics: updated_metrics
         }
 
         Logger.info("Added validator '#{validator_id}', vouched by '#{vouched_by}'")
@@ -246,11 +289,12 @@ defmodule Kylix.Consensus.ValidatorCoordinator do
         # Adjust current_validator_index if needed
         adjusted_index = min(state.current_validator_index, length(updated_validators) - 1)
 
-        updated_state = %{state |
-          validators: updated_validators,
-          public_keys: updated_public_keys,
-          performance_metrics: updated_metrics,
-          current_validator_index: adjusted_index
+        updated_state = %{
+          state
+          | validators: updated_validators,
+            public_keys: updated_public_keys,
+            performance_metrics: updated_metrics,
+            current_validator_index: adjusted_index
         }
 
         Logger.info("Removed validator '#{validator_id}'")
@@ -304,19 +348,18 @@ defmodule Kylix.Consensus.ValidatorCoordinator do
       {:noreply, state}
     else
       # Update metrics
-      updated_metrics = update_performance_metrics(
-        state.performance_metrics,
-        validator_id,
-        success?,
-        tx_time,
-        state.performance_window
-      )
+      updated_metrics =
+        update_performance_metrics(
+          state.performance_metrics,
+          validator_id,
+          success?,
+          tx_time,
+          state.performance_window
+        )
 
       # Update last block time
-      {:noreply, %{state |
-        performance_metrics: updated_metrics,
-        last_block_time: DateTime.utc_now()
-      }}
+      {:noreply,
+       %{state | performance_metrics: updated_metrics, last_block_time: DateTime.utc_now()}}
     end
   end
 
@@ -336,9 +379,12 @@ defmodule Kylix.Consensus.ValidatorCoordinator do
       successful_transactions: 0,
       failure_rate: 0.0,
       last_active: DateTime.utc_now(),
-      recent_tx_times: [], # List of recent transaction times (microseconds)
-      avg_tx_time: nil, # Average transaction time (microseconds)
-      recent_results: [] # List of recent transaction results (true/false)
+      # List of recent transaction times (microseconds)
+      recent_tx_times: [],
+      # Average transaction time (microseconds)
+      avg_tx_time: nil,
+      # List of recent transaction results (true/false)
+      recent_results: []
     }
   end
 
@@ -347,9 +393,10 @@ defmodule Kylix.Consensus.ValidatorCoordinator do
       # Update transaction counts
       current
       |> Map.update(:total_transactions, 1, &(&1 + 1))
-      |> Map.update(:successful_transactions,
-          (if success?, do: 1, else: 0),
-          &(&1 + (if success?, do: 1, else: 0))
+      |> Map.update(
+        :successful_transactions,
+        if(success?, do: 1, else: 0),
+        &(&1 + if(success?, do: 1, else: 0))
       )
       |> Map.put(:last_active, DateTime.utc_now())
       |> update_recent_results(success?, window_size)
@@ -365,6 +412,7 @@ defmodule Kylix.Consensus.ValidatorCoordinator do
   end
 
   defp update_tx_times(metrics, nil, _window_size), do: metrics
+
   defp update_tx_times(metrics, tx_time, window_size) do
     # Add new time and trim to window size
     recent_tx_times = [tx_time | metrics.recent_tx_times] |> Enum.take(window_size)
