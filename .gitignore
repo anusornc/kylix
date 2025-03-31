@@ -46,6 +46,11 @@ erl_crash.dump
 .env
 .env.*
 
+.DS_Store
+# Temporary files
+*.tmp
+*.temp
+
 # Generated documentation
 /doc/
 
