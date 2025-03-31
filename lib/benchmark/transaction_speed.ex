@@ -27,13 +27,6 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     predicate = "prov:wasGeneratedBy"
     object_base = "activity:process"
 
-    # Use current validator instead of hardcoding
-    validator = Kylix.Consensus.ValidatorCoordinator.get_current_validator()
-
-    # Log validator information for debugging
-    IO.puts("Using validator: #{validator}")
-    IO.puts("Current validators: #{Enum.join(Kylix.get_validators(), ", ")}")
-
     # Start timing
     start_time = System.monotonic_time(:millisecond)
 
@@ -44,6 +37,9 @@ defmodule Kylix.Benchmark.TransactionSpeed do
       Enum.map(1..num_transactions, fn i ->
         subject = "#{subject_base}#{i}"
         object = "#{object_base}#{i}"
+
+        # Get a fresh validator for each transaction
+        validator = Kylix.Consensus.ValidatorCoordinator.get_current_validator()
 
         # Generate proper signature for each transaction
         timestamp = DateTime.utc_now()
@@ -148,8 +144,6 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     subject_base = "entity:async_test"
     predicate = "prov:wasGeneratedBy"
     object_base = "activity:process"
-    # Use a known validator - the queue will handle rotation
-    validator = "agent1"
 
     # Start timing
     start_time = System.monotonic_time(:millisecond)
@@ -161,6 +155,11 @@ defmodule Kylix.Benchmark.TransactionSpeed do
       Enum.map(1..num_transactions, fn i ->
         subject = "#{subject_base}#{i}"
         object = "#{object_base}#{i}"
+
+        # Get a fresh validator for each transaction
+        # The transaction queue will handle rotation internally, but this ensures
+        # we're using a valid validator from the start
+        validator = Kylix.Consensus.ValidatorCoordinator.get_current_validator()
 
         # Generate proper signature for each transaction
         timestamp = DateTime.utc_now()
