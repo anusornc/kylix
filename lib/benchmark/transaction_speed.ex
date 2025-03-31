@@ -19,47 +19,63 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     {:ok, _} = Application.ensure_all_started(:kylix)
 
     # Get test key pair with fallback to generating a new one
-    {:ok, %{private_key: private_key, public_key: _public_key}} = get_test_key_pair_with_fallback()
+    {:ok, %{private_key: private_key, public_key: _public_key}} =
+      get_test_key_pair_with_fallback()
 
     # Set up test data
     subject_base = "entity:test"
     predicate = "prov:wasGeneratedBy"
     object_base = "activity:process"
-    validator = "agent1"  # Use a known validator
+
+    # Use current validator instead of hardcoding
+    validator = Kylix.Consensus.ValidatorCoordinator.get_current_validator()
+
+    # Log validator information for debugging
+    IO.puts("Using validator: #{validator}")
+    IO.puts("Current validators: #{Enum.join(Kylix.get_validators(), ", ")}")
 
     # Start timing
     start_time = System.monotonic_time(:millisecond)
 
     # Execute transactions
     IO.puts("Running #{num_transactions} transactions for baseline test...")
-    results = Enum.map(1..num_transactions, fn i ->
-      subject = "#{subject_base}#{i}"
-      object = "#{object_base}#{i}"
 
-      # Generate proper signature for each transaction
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction(subject, predicate, object, validator, timestamp)
-      signature = sign(tx_hash, private_key)
+    results =
+      Enum.map(1..num_transactions, fn i ->
+        subject = "#{subject_base}#{i}"
+        object = "#{object_base}#{i}"
 
-      # Add transaction and measure time
-      tx_start = System.monotonic_time(:microsecond)
-      result = Kylix.add_transaction(subject, predicate, object, validator, signature)
-      tx_end = System.monotonic_time(:microsecond)
-      tx_time = tx_end - tx_start
+        # Generate proper signature for each transaction
+        timestamp = DateTime.utc_now()
+        tx_hash = hash_transaction(subject, predicate, object, validator, timestamp)
+        signature = sign(tx_hash, private_key)
 
-      # Log progress every 100 transactions
-      if rem(i, 100) == 0, do: IO.puts("Completed #{i} transactions. Last took #{tx_time}μs")
+        # Log before adding the transaction
+        IO.puts("Attempting transaction #{i} with validator: #{validator}")
 
-      # Log success/failure
-      case result do
-        {:ok, tx_id} ->
-          IO.puts("Transaction #{i} successful with ID: #{tx_id}")
-        {:error, reason} ->
-          IO.puts("Transaction #{i} failed: #{inspect(reason)}")
-      end
+        # Add transaction and measure time
+        tx_start = System.monotonic_time(:microsecond)
+        result = Kylix.add_transaction(subject, predicate, object, validator, signature)
+        tx_end = System.monotonic_time(:microsecond)
+        tx_time = tx_end - tx_start
 
-      {result, tx_time}
-    end)
+        # Log progress every 100 transactions
+        if rem(i, 100) == 0, do: IO.puts("Completed #{i} transactions. Last took #{tx_time}μs")
+
+        # Enhanced logging of the result
+        case result do
+          {:ok, tx_id} ->
+            IO.puts("Transaction #{i} successful with ID: #{tx_id}")
+
+          {:error, reason} ->
+            IO.puts("Transaction #{i} failed: #{inspect(reason)}")
+            # Print the current validator to debug
+            current_validator = Kylix.Consensus.ValidatorCoordinator.status().current_validator
+            IO.puts("Current validator after failure: #{current_validator}")
+        end
+
+        {result, tx_time}
+      end)
 
     # End timing
     end_time = System.monotonic_time(:millisecond)
@@ -72,6 +88,15 @@ defmodule Kylix.Benchmark.TransactionSpeed do
 
     # Calculate TPS (Transactions Per Second)
     tps = if total_time > 0, do: successful_txs / (total_time / 1000), else: 0.0
+
+    # Log detailed statistics for debugging
+    IO.puts("\nDetailed statistics:")
+    IO.puts("Total transactions attempted: #{num_transactions}")
+    IO.puts("Successful transactions: #{successful_txs}")
+    IO.puts("Failed transactions: #{num_transactions - successful_txs}")
+    IO.puts("Success rate: #{successful_txs / num_transactions * 100}%")
+    IO.puts("Total time: #{total_time}ms")
+    IO.puts("TPS: #{tps}")
 
     # Prepare result data
     result = %{
@@ -116,39 +141,44 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     Kylix.Server.TransactionQueue.clear()
 
     # Get test key pair with fallback to generating a new one
-    {:ok, %{private_key: private_key, public_key: _public_key}} = get_test_key_pair_with_fallback()
+    {:ok, %{private_key: private_key, public_key: _public_key}} =
+      get_test_key_pair_with_fallback()
 
     # Set up test data
     subject_base = "entity:async_test"
     predicate = "prov:wasGeneratedBy"
     object_base = "activity:process"
-    validator = "agent1"  # Use a known validator - the queue will handle rotation
+    # Use a known validator - the queue will handle rotation
+    validator = "agent1"
 
     # Start timing
     start_time = System.monotonic_time(:millisecond)
 
     # Submit transactions asynchronously
     IO.puts("Submitting #{num_transactions} transactions asynchronously...")
-    transaction_refs = Enum.map(1..num_transactions, fn i ->
-      subject = "#{subject_base}#{i}"
-      object = "#{object_base}#{i}"
 
-      # Generate proper signature for each transaction
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction(subject, predicate, object, validator, timestamp)
-      signature = sign(tx_hash, private_key)
+    transaction_refs =
+      Enum.map(1..num_transactions, fn i ->
+        subject = "#{subject_base}#{i}"
+        object = "#{object_base}#{i}"
 
-      # Measure submission time only - actual processing happens asynchronously
-      submit_start = System.monotonic_time(:microsecond)
-      {:ok, ref} = Kylix.add_transaction_async(subject, predicate, object, validator, signature)
-      submit_end = System.monotonic_time(:microsecond)
-      submit_time = submit_end - submit_start
+        # Generate proper signature for each transaction
+        timestamp = DateTime.utc_now()
+        tx_hash = hash_transaction(subject, predicate, object, validator, timestamp)
+        signature = sign(tx_hash, private_key)
 
-      # Log progress every 100 transactions
-      if rem(i, 100) == 0, do: IO.puts("Submitted #{i} transactions. Last took #{submit_time}μs")
+        # Measure submission time only - actual processing happens asynchronously
+        submit_start = System.monotonic_time(:microsecond)
+        {:ok, ref} = Kylix.add_transaction_async(subject, predicate, object, validator, signature)
+        submit_end = System.monotonic_time(:microsecond)
+        submit_time = submit_end - submit_start
 
-      {ref, submit_time}
-    end)
+        # Log progress every 100 transactions
+        if rem(i, 100) == 0,
+          do: IO.puts("Submitted #{i} transactions. Last took #{submit_time}μs")
+
+        {ref, submit_time}
+      end)
 
     # End submission timing
     submission_end_time = System.monotonic_time(:millisecond)
@@ -172,20 +202,23 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     _queue_failed = status.stats.failed
 
     # Get result information for each transaction
-    tx_results = Enum.map(refs, fn ref ->
-      Kylix.Server.TransactionQueue.get_transaction_status(ref)
-    end)
+    tx_results =
+      Enum.map(refs, fn ref ->
+        Kylix.Server.TransactionQueue.get_transaction_status(ref)
+      end)
 
     # Count successful and failed transactions
-    success_count = Enum.count(tx_results, fn
-      nil -> false
-      status -> match?({:ok, _}, Map.get(status, :result, {:error, :not_processed}))
-    end)
+    success_count =
+      Enum.count(tx_results, fn
+        nil -> false
+        status -> match?({:ok, _}, Map.get(status, :result, {:error, :not_processed}))
+      end)
 
-    failure_count = Enum.count(tx_results, fn
-      nil -> false
-      status -> match?({:error, _}, Map.get(status, :result, {:ok, "counted_as_success"}))
-    end)
+    failure_count =
+      Enum.count(tx_results, fn
+        nil -> false
+        status -> match?({:error, _}, Map.get(status, :result, {:ok, "counted_as_success"}))
+      end)
 
     # Calculate statistics
     avg_submit_time = Enum.sum(submission_times) / num_transactions
@@ -228,28 +261,34 @@ defmodule Kylix.Benchmark.TransactionSpeed do
   defp wait_for_processing(expected_count, max_wait_ms \\ 30000) do
     start_time = System.monotonic_time(:millisecond)
 
-    wait_with_timeout(fn ->
-      status = Kylix.get_queue_status()
-      processed = status.stats.processed
-      queue_length = status.queue_length
+    wait_with_timeout(
+      fn ->
+        status = Kylix.get_queue_status()
+        processed = status.stats.processed
+        queue_length = status.queue_length
 
-      current_time = System.monotonic_time(:millisecond)
-      elapsed = current_time - start_time
+        current_time = System.monotonic_time(:millisecond)
+        elapsed = current_time - start_time
 
-      # Every few seconds, print status
-      if rem(div(elapsed, 1000), 2) == 0 do
-        IO.puts("Progress: #{processed}/#{expected_count} processed, #{queue_length} in queue, #{div(elapsed, 1000)}s elapsed")
-      end
+        # Every few seconds, print status
+        if rem(div(elapsed, 1000), 2) == 0 do
+          IO.puts(
+            "Progress: #{processed}/#{expected_count} processed, #{queue_length} in queue, #{div(elapsed, 1000)}s elapsed"
+          )
+        end
 
-      # Check if we've processed enough or if queue is empty and we've processed something
-      if processed >= expected_count || (queue_length == 0 && processed > 0) do
-        true
-      else
-        # Wait a bit before checking again
-        Process.sleep(100)
-        false
-      end
-    end, max_wait_ms, "Timeout waiting for transaction processing")
+        # Check if we've processed enough or if queue is empty and we've processed something
+        if processed >= expected_count || (queue_length == 0 && processed > 0) do
+          true
+        else
+          # Wait a bit before checking again
+          Process.sleep(100)
+          false
+        end
+      end,
+      max_wait_ms,
+      "Timeout waiting for transaction processing"
+    )
   end
 
   # Helper function to wait with timeout
@@ -270,6 +309,7 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     Stream.cycle([1])
     |> Enum.reduce_while(false, fn _, _ ->
       current_time = System.monotonic_time(:millisecond)
+
       if current_time - start_time > max_wait_ms do
         {:halt, false}
       else
@@ -326,10 +366,14 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     len = length(sorted_times)
 
     %{
+      min: List.first(sorted_times),
+      p25: Enum.at(sorted_times, floor(len * 0.25)),
       p50: Enum.at(sorted_times, floor(len * 0.5)),
+      p75: Enum.at(sorted_times, floor(len * 0.75)),
       p90: Enum.at(sorted_times, floor(len * 0.9)),
       p95: Enum.at(sorted_times, floor(len * 0.95)),
-      p99: Enum.at(sorted_times, floor(len * 0.99))
+      p99: Enum.at(sorted_times, floor(len * 0.99)),
+      max: List.last(sorted_times)
     }
   end
 
