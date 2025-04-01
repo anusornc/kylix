@@ -102,3 +102,12 @@
 - [ ] Add advanced visualizations for DAG structure
 - [ ] Implement real-time transaction monitoring
 - [ ] Create administrative controls for validator management
+
+## ปัญหา
+- [ ] ระบบไม่ได้บันทึก Edge ในขั้นตอนของการ add_transaction แบบอัตโนมัติ ต้องทำ manuall
+- [ ] ต้องออกแบบระบบสำหรับการรองรับ Double Edge
+  - [ ] Temporal Edge
+  - [ ] Semantic Edge
+- [ ] การตรวจสอบว่า Validator คือใครในระบบนี้
+  - [ ] agent คือ client ที่จะใช้ private key sign และใช้ signature_verifier ***
+  - [ ] network/validator_network ทำหน้าที่ตรวจสอบ Validator ที่จะเชื่อมเข้ามา

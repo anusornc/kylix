@@ -17,9 +17,9 @@ erl_crash.dump
 /data/test/
 
 # Validator keys and configuration files
-/config/validators/*.pub
-/config/validators/*.key
-/config/validators/*.pem
+/config/validators/
+/config/client_wallet/
+
 
 # Test temporary files
 /test/tmp/
