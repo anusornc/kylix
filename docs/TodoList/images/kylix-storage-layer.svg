@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <!-- Background -->
+  <rect width="800" height="600" fill="#f8f9fa" />
+  
+  <!-- Title -->
+  <text x="400" y="40" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle">Kylix Storage Layer Architecture</text>
+  
+  <!-- DAG Engine -->
+  <rect x="50" y="100" width="300" height="200" fill="#ffccbc" stroke="#ff5722" stroke-width="2" rx="10" />
+  <text x="200" y="125" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#d84315">In-Memory DAG Engine</text>
+  
+  <!-- DAG Structure inside -->
+  <circle cx="100" cy="175" r="20" fill="#ff8a65" stroke="#d84315" stroke-width="1" />
+  <text x="100" y="175" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" dominant-baseline="middle">Tx1</text>
+  
+  <circle cx="150" cy="225" r="20" fill="#ff8a65" stroke="#d84315" stroke-width="1" />
+  <text x="150" y="225" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" dominant-baseline="middle">Tx2</text>
+  
+  <circle cx="200" cy="175" r="20" fill="#ff8a65" stroke="#d84315" stroke-width="1" />
+  <text x="200" y="175" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" dominant-baseline="middle">Tx3</text>
+  
+  <circle cx="250" cy="225" r="20" fill="#ff8a65" stroke="#d84315" stroke-width="1" />
+  <text x="250" y="225" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" dominant-baseline="middle">Tx4</text>
+  
+  <circle cx="300" cy="175" r="20" fill="#ff8a65" stroke="#d84315" stroke-width="1" />
+  <text x="300" y="175" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" dominant-baseline="middle">Tx5</text>
+  
+  <!-- Edges between nodes -->
+  <line x1="115" y1="185" x2="135" y2="215" stroke="#d84315" stroke-width="1.5" marker-end="url(#orangeArrow)" />
+  <line x1="170" y1="215" x2="185" y2="190" stroke="#d84315" stroke-width="1.5" marker-end="url(#orangeArrow)" />
+  <line x1="215" y1="185" x2="235" y2="215" stroke="#d84315" stroke-width="1.5" marker-end="url(#orangeArrow)" />
+  <line x1="270" y1="215" x2="285" y2="190" stroke="#d84315" stroke-width="1.5" marker-end="url(#orangeArrow)" />
+  
+  <!-- Node Structure Callout -->
+  <rect x="70" y="260" width="260" height="30" fill="#ffab91" stroke="#d84315" stroke-width="1" rx="5" />
+  <text x="200" y="280" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">{subject, predicate, object, validator, timestamp}</text>
+  
+  <!-- Persistent Storage -->
+  <rect x="450" y="100" width="300" height="200" fill="#d1c4e9" stroke="#673ab7" stroke-width="2" rx="10" />
+  <text x="600" y="125" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#4527a0">Persistent DAG Engine</text>
+  
+  <!-- File structure inside -->
+  <rect x="500" y="150" width="80" height="25" fill="#b39ddb" stroke="#4527a0" stroke-width="1" rx="2" />
+  <text x="540" y="167" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">nodes/</text>
+  
+  <rect x="510" y="185" width="60" height="20" fill="#e8eaf6" stroke="#4527a0" stroke-width="1" rx="2" />
+  <text x="540" y="200" font-family="Arial, sans-serif" font-size="10" text-anchor="middle">tx1.bin</text>
+  
+  <rect x="510" y="215" width="60" height="20" fill="#e8eaf6" stroke="#4527a0" stroke-width="1" rx="2" />
+  <text x="540" y="230" font-family="Arial, sans-serif" font-size="10" text-anchor="middle">tx2.bin</text>
+  
+  <rect x="510" y="245" width="60" height="20" fill="#e8eaf6" stroke="#4527a0" stroke-width="1" rx="2" />
+  <text x="540" y="260" font-family="Arial, sans-serif" font-size="10" text-anchor="middle">tx3.bin</text>
+  
+  <rect x="620" y="150" width="80" height="25" fill="#b39ddb" stroke="#4527a0" stroke-width="1" rx="2" />
+  <text x="660" y="167" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">edges/</text>
+  
+  <rect x="630" y="185" width="60" height="20" fill="#e8eaf6" stroke="#4527a0" stroke-width="1" rx="2" />
+  <text x="660" y="200" font-family="Arial, sans-serif" font-size="10" text-anchor="middle">tx1_tx2.bin</text>
+  
+  <rect x="630" y="215" width="60" height="20" fill="#e8eaf6" stroke="#4527a0" stroke-width="1" rx="2" />
+  <text x="660" y="230" font-family="Arial, sans-serif" font-size="10" text-anchor="middle">tx2_tx3.bin</text>
+  
+  <!-- Storage Coordinator -->
+  <rect x="200" y="350" width="400" height="150" fill="#bbdefb" stroke="#2196f3" stroke-width="2" rx="10" />
+  <text x="400" y="375" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#0d47a1">Storage Coordinator</text>
+  
+  <!-- Coordinator components -->
+  <rect x="220" y="395" width="120" height="30" fill="#e3f2fd" stroke="#0d47a1" stroke-width="1" rx="5" />
+  <text x="280" y="415" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">Cache Manager</text>
+  
+  <rect x="220" y="435" width="120" height="30" fill="#e3f2fd" stroke="#0d47a1" stroke-width="1" rx="5" />
+  <text x="280" y="455" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">Query Router</text>
+  
+  <rect x="360" y="395" width="120" height="30" fill="#e3f2fd" stroke="#0d47a1" stroke-width="1" rx="5" />
+  <text x="420" y="415" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">Sync Manager</text>
+  
+  <rect x="360" y="435" width="120" height="30" fill="#e3f2fd" stroke="#0d47a1" stroke-width="1" rx="5" />
+  <text x="420" y="455" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">Metrics Collector</text>
+  
+  <!-- Blockchain Server (external) -->
+  <rect x="275" y="550" width="250" height="40" fill="#c8e6c9" stroke="#4caf50" stroke-width="2" rx="5" />
+  <text x="400" y="575" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle">Blockchain Server</text>
+  
+  <!-- Data flow arrows -->
+  <!-- In-memory to Coordinator -->
+  <line x1="200" y1="300" x2="300" y2="350" stroke="#f4511e" stroke-width="2" marker-end="url(#redArrow)" />
+  <text x="210" y="330" font-family="Arial, sans-serif" font-size="12" fill="#f4511e" text-anchor="middle">Query Results</text>
+  
+  <!-- Coordinator to In-memory -->
+  <line x1="350" y1="350" x2="250" y2="300" stroke="#0d47a1" stroke-width="2" marker-end="url(#blueArrow)" />
+  <text x="325" y="330" font-family="Arial, sans-serif" font-size="12" fill="#0d47a1" text-anchor="middle">Updates</text>
+  
+  <!-- Persistent to Coordinator -->
+  <line x1="600" y1="300" x2="500" y2="350" stroke="#673ab7" stroke-width="2" marker-end="url(#purpleArrow)" />
+  <text x="580" y="330" font-family="Arial, sans-serif" font-size="12" fill="#673ab7" text-anchor="middle">Backup Data</text>
+  
+  <!-- Coordinator to Persistent -->
+  <line x1="450" y1="350" x2="550" y2="300" stroke="#0d47a1" stroke-width="2" marker-end="url(#blueArrow)" />
+  <text x="475" y="330" font-family="Arial, sans-serif" font-size="12" fill="#0d47a1" text-anchor="middle">Persistence</text>
+  
+  <!-- Server to Coordinator -->
+  <line x1="350" y1="550" x2="350" y2="500" stroke="#4caf50" stroke-width="2" marker-end="url(#greenArrow)" />
+  <text x="325" y="525" font-family="Arial, sans-serif" font-size="12" fill="#4caf50" text-anchor="middle">Transactions</text>
+  
+  <!-- Coordinator to Server -->
+  <line x1="450" y1="500" x2="450" y2="550" stroke="#0d47a1" stroke-width="2" marker-end="url(#blueArrow)" />
+  <text x="500" y="525" font-family="Arial, sans-serif" font-size="12" fill="#0d47a1" text-anchor="middle">Query Results</text>
+  
+  <!-- Arrowhead definitions -->
+  <defs>
+    <marker id="orangeArrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#d84315" />
+    </marker>
+    <marker id="blueArrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#0d47a1" />
+    </marker>
+    <marker id="redArrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#f4511e" />
+    </marker>
+    <marker id="purpleArrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#673ab7" />
+    </marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#4caf50" />
+    </marker>
+  </defs>
+  
+  <!-- Legend -->
+  <rect x="50" y="520" width="200" height="70" fill="white" stroke="#757575" stroke-width="1" rx="5" />
+  <text x="150" y="540" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle">Performance Benefits</text>
+  <text x="150" y="560" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">• In-memory for speed</text>
+  <text x="150" y="580" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">• Disk for durability</text>
+  
+  <rect x="600" y="520" width="150" height="70" fill="white" stroke="#757575" stroke-width="1" rx="5" />
+  <text x="675" y="540" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle">Optimizations</text>
+  <text x="675" y="560" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">• Caching</text>
+  <text x="675" y="580" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">• Indexing</text>
+</svg>

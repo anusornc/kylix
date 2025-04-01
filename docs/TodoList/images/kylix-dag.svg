@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <!-- Background -->
+  <rect width="800" height="500" fill="#f8f9fa" />
+  
+  <!-- Title -->
+  <text x="400" y="40" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle">Kylix DAG Transaction Structure</text>
+  
+  <!-- Nodes -->
+  <!-- Transaction Layer 1 -->
+  <circle cx="400" cy="120" r="30" fill="#4285f4" stroke="#2c5bb4" stroke-width="2" />
+  <text x="400" y="120" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx1</text>
+  
+  <!-- Transaction Layer 2 -->
+  <circle cx="250" cy="200" r="30" fill="#34a853" stroke="#227733" stroke-width="2" />
+  <text x="250" y="200" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx2</text>
+  
+  <circle cx="400" cy="200" r="30" fill="#34a853" stroke="#227733" stroke-width="2" />
+  <text x="400" y="200" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx3</text>
+  
+  <circle cx="550" cy="200" r="30" fill="#34a853" stroke="#227733" stroke-width="2" />
+  <text x="550" y="200" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx4</text>
+  
+  <!-- Transaction Layer 3 -->
+  <circle cx="175" cy="280" r="30" fill="#fbbc05" stroke="#c9971c" stroke-width="2" />
+  <text x="175" y="280" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx5</text>
+  
+  <circle cx="325" cy="280" r="30" fill="#fbbc05" stroke="#c9971c" stroke-width="2" />
+  <text x="325" y="280" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx6</text>
+  
+  <circle cx="475" cy="280" r="30" fill="#fbbc05" stroke="#c9971c" stroke-width="2" />
+  <text x="475" y="280" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx7</text>
+  
+  <circle cx="625" cy="280" r="30" fill="#fbbc05" stroke="#c9971c" stroke-width="2" />
+  <text x="625" y="280" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx8</text>
+  
+  <!-- Transaction Layer 4 -->
+  <circle cx="225" cy="360" r="30" fill="#ea4335" stroke="#be3224" stroke-width="2" />
+  <text x="225" y="360" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx9</text>
+  
+  <circle cx="400" cy="360" r="30" fill="#ea4335" stroke="#be3224" stroke-width="2" />
+  <text x="400" y="360" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx10</text>
+  
+  <circle cx="575" cy="360" r="30" fill="#ea4335" stroke="#be3224" stroke-width="2" />
+  <text x="575" y="360" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">Tx11</text>
+  
+  <!-- Edges -->
+  <!-- Layer 1 to Layer 2 -->
+  <line x1="385" y1="145" x2="265" y2="175" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="400" y1="150" x2="400" y2="170" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="415" y1="145" x2="535" y2="175" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  
+  <!-- Layer 2 to Layer 3 -->
+  <line x1="235" y1="225" x2="190" y2="255" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="265" y1="225" x2="310" y2="255" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="385" y1="225" x2="340" y2="255" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="415" y1="225" x2="460" y2="255" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="535" y1="225" x2="490" y2="255" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="565" y1="225" x2="610" y2="255" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  
+  <!-- Layer 3 to Layer 4 -->
+  <line x1="190" y1="305" x2="210" y2="335" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="310" y1="305" x2="240" y2="335" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="340" y1="305" x2="385" y2="335" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="460" y1="305" x2="415" y2="335" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="490" y1="305" x2="560" y2="335" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <line x1="610" y1="305" x2="590" y2="335" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  
+  <!-- Cross-layer edges representing semantic relationships -->
+  <line x1="250" y1="230" x2="400" y2="330" stroke="#9575cd" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#purpleArrow)" />
+  <line x1="550" y1="230" x2="575" y2="330" stroke="#9575cd" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#purpleArrow)" />
+  
+  <!-- Legend -->
+  <rect x="600" y="400" width="180" height="80" fill="white" stroke="#ccc" stroke-width="1" rx="5" />
+  <text x="690" y="420" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle">Legend</text>
+  
+  <line x1="620" y1="440" x2="660" y2="440" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" />
+  <text x="735" y="445" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">Confirmation Link</text>
+  
+  <line x1="620" y1="465" x2="660" y2="465" stroke="#9575cd" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#purpleArrow)" />
+  <text x="735" y="470" font-family="Arial, sans-serif" font-size="12" text-anchor="middle">Semantic Link</text>
+  
+  <!-- Arrowhead definitions -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666" />
+    </marker>
+    <marker id="purpleArrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9575cd" />
+    </marker>
+  </defs>
+  
+  <!-- Annotations -->
+  <text x="85" y="280" font-family="Arial, sans-serif" font-size="12" text-anchor="end">Parallel</text>
+  <text x="85" y="295" font-family="Arial, sans-serif" font-size="12" text-anchor="end">Transaction</text>
+  <text x="85" y="310" font-family="Arial, sans-serif" font-size="12" text-anchor="end">Processing</text>
+  
+  <text x="715" y="280" font-family="Arial, sans-serif" font-size="12" text-anchor="start">Multiple</text>
+  <text x="715" y="295" font-family="Arial, sans-serif" font-size="12" text-anchor="start">Validators</text>
+  <text x="715" y="310" font-family="Arial, sans-serif" font-size="12" text-anchor="start">Concurrently</text>
+</svg>

@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 300">
+  <title>PROV-O Ontology Integration in Kylix</title>
+  
+  <!-- Background with Subtle Gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f4f4f4;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#e9ecef;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="300" fill="url(#bgGradient)"/>
+  
+  <!-- Title with Shadow -->
+  <defs>
+    <filter id="titleShadow">
+      <feDropShadow dx="1" dy="1" stdDeviation="1" flood-color="#7f8c8d"/>
+    </filter>
+  </defs>
+  <text x="300" y="25" text-anchor="middle" font-size="18" font-family="Arial" font-weight="bold" fill="#2c3e50" filter="url(#titleShadow)">
+    PROV-O Ontology Relationships in Kylix
+  </text>
+  
+  <!-- Entity -->
+  <g transform="translate(80, 90)">
+    <defs>
+      <linearGradient id="entityGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style="stop-color:#3498db;stop-opacity:1"/>
+        <stop offset="100%" style="stop-color:#2980b9;stop-opacity:1"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="110" height="60" fill="url(#entityGrad)" rx="12" filter="url(#glow)"/>
+    <text x="55" y="25" text-anchor="middle" font-size="14" font-family="Arial" fill="white" font-weight="bold">Entity</text>
+    <text x="55" y="45" text-anchor="middle" font-size="10" font-family="Arial" fill="#ecf0f1">"document1"</text>
+  </g>
+  
+  <!-- Activity -->
+  <g transform="translate(245, 90)">
+    <defs>
+      <linearGradient id="activityGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style="stop-color:#2ecc71;stop-opacity:1"/>
+        <stop offset="100%" style="stop-color:#27ae60;stop-opacity:1"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="110" height="60" fill="url(#activityGrad)" rx="12" filter="url(#glow)"/>
+    <text x="55" y="25" text-anchor="middle" font-size="14" font-family="Arial" fill="white" font-weight="bold">Activity</text>
+    <text x="55" y="45" text-anchor="middle" font-size="10" font-family="Arial" fill="#ecf0f1">"data_processing"</text>
+  </g>
+  
+  <!-- Agent -->
+  <g transform="translate(410, 90)">
+    <defs>
+      <linearGradient id="agentGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style="stop-color:#e74c3c;stop-opacity:1"/>
+        <stop offset="100%" style="stop-color:#c0392b;stop-opacity:1"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="110" height="60" fill="url(#agentGrad)" rx="12" filter="url(#glow)"/>
+    <text x="55" y="25" text-anchor="middle" font-size="14" font-family="Arial" fill="white" font-weight="bold">Agent</text>
+    <text x="55" y="45" text-anchor="middle" font-size="10" font-family="Arial" fill="#ecf0f1">"analyst1"</text>
+  </g>
+  
+  <!-- Relationships with Arrows and Labels -->
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#34495e"/>
+    </marker>
+  </defs>
+  
+  <!-- wasGeneratedBy (Entity -> Activity) -->
+  <path d="M190,120 Q300,60 355,120" fill="none" stroke="#34495e" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow)"/>
+  <rect x="270" y="45" width="60" height="20" fill="#ffffff" rx="5" stroke="#34495e" stroke-width="1"/>
+  <text x="300" y="58" text-anchor="middle" font-size="10" font-family="Arial" fill="#34495e">wasGeneratedBy</text>
+  
+  <!-- wasAttributedTo (Activity -> Agent) -->
+  <path d="M355,120 Q450,60 520,120" fill="none" stroke="#34495e" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow)"/>
+  <rect x="420" y="45" width="60" height="20" fill="#ffffff" rx="5" stroke="#34495e" stroke-width="1"/>
+  <text x="450" y="58" text-anchor="middle" font-size="10" font-family="Arial" fill="#34495e">wasAttributedTo</text>
+  
+  <!-- wasDerivedFrom (Entity -> Agent) -->
+  <path d="M190,120 Q300,200 520,120" fill="none" stroke="#34495e" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrow)"/>
+  <rect x="270" y="185" width="60" height="20" fill="#ffffff" rx="5" stroke="#34495e" stroke-width="1"/>
+  <text x="300" y="198" text-anchor="middle" font-size="10" font-family="Arial" fill="#34495e">wasDerivedFrom</text>
+  
+  <!-- Glow Effect -->
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Footer Note -->
+  <text x="300" y="290" text-anchor="middle" font-size="10" font-family="Arial" fill="#7f8c8d">Integrated with Kylix DAG</text>
+</svg>

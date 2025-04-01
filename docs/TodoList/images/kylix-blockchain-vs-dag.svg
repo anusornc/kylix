@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 300">
+  <title>Kylix Overview: Traditional Blockchain vs DAG Structure</title>
+  <!-- Background -->
+  <rect width="600" height="300" fill="#f4f4f4"/>
+  <!-- Title -->
+  <text x="300" y="20" text-anchor="middle" font-size="14" font-weight="bold">
+    Blockchain vs DAG: Transaction Structure
+  </text>
+  <!-- Traditional Blockchain (Left) -->
+  <g transform="translate(40, 40)">
+    <text x="110" y="15" text-anchor="middle" font-size="12" font-weight="bold">Traditional Blockchain</text>
+    <!-- Blocks -->
+    <rect x="40" y="30" width="140" height="40" fill="#3498db" stroke="#2980b9" rx="5"/>
+    <text x="110" y="55" text-anchor="middle" font-size="12" fill="white">Block 1</text>
+    <polyline points="110,70 110,90" stroke="#2c3e50" stroke-dasharray="4,4"/>
+    <rect x="40" y="90" width="140" height="40" fill="#3498db" stroke="#2980b9" rx="5"/>
+    <text x="110" y="115" text-anchor="middle" font-size="12" fill="white">Block 2</text>
+    <polyline points="110,130 110,150" stroke="#2c3e50" stroke-dasharray="4,4"/>
+    <rect x="40" y="150" width="140" height="40" fill="#3498db" stroke="#2980b9" rx="5"/>
+    <text x="110" y="175" text-anchor="middle" font-size="12" fill="white">Block 3</text>
+    <text x="110" y="205" text-anchor="middle" font-size="10" fill="#7f8c8d">Linear Sequence</text>
+  </g>
+  <!-- DAG Structure (Right) -->
+  <g transform="translate(340, 40)">
+    <text x="110" y="15" text-anchor="middle" font-size="12" font-weight="bold">Kylix DAG Structure</text>
+    <!-- Nodes with Multiple Connections -->
+    <circle cx="110" cy="60" r="15" fill="#2ecc71" stroke="#27ae60"/>
+    <text x="110" y="64" text-anchor="middle" font-size="10" fill="white">Tx 1</text>
+    <circle cx="70" cy="110" r="15" fill="#e74c3c" stroke="#c0392b"/>
+    <text x="70" y="114" text-anchor="middle" font-size="10" fill="white">Tx 2</text>
+    <circle cx="150" cy="110" r="15" fill="#f39c12" stroke="#d35400"/>
+    <text x="150" y="114" text-anchor="middle" font-size="10" fill="white">Tx 3</text>
+    <circle cx="40" cy="160" r="15" fill="#9b59b6" stroke="#8e44ad"/>
+    <text x="40" y="164" text-anchor="middle" font-size="10" fill="white">Tx 4</text>
+    <circle cx="180" cy="160" r="15" fill="#1abc9c" stroke="#16a085"/>
+    <text x="180" y="164" text-anchor="middle" font-size="10" fill="white">Tx 5</text>
+    <!-- Connections -->
+    <line x1="110" y1="75" x2="70" y2="95" stroke="#34495e" stroke-dasharray="4,4"/>
+    <line x1="110" y1="75" x2="150" y2="95" stroke="#34495e" stroke-dasharray="4,4oxycycline"/>
+    <line x1="70" y1="125" x2="40" y2="145" stroke="#34495e" stroke-dasharray="4,4"/>
+    <line x1="150" y1="125" x2="180" y2="145" stroke="#34495e" stroke-dasharray="4,4"/>
+    <text x="110" y="205" text-anchor="middle" font-size="10" fill="#7f8c8d">Parallel Connections</text>
+  </g>
+</svg>
