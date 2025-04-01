@@ -111,3 +111,5 @@
 - [ ] การตรวจสอบว่า Validator คือใครในระบบนี้
   - [ ] agent คือ client ที่จะใช้ private key sign และใช้ signature_verifier ***
   - [ ] network/validator_network ทำหน้าที่ตรวจสอบ Validator ที่จะเชื่อมเข้ามา
+
+  Kylix อาจต้องมี สามส่วนคือ client, validator, blockchain แต่ทั้งหมดติดตั้งลงใน Server ตัวเดียวกัน แบ่งเป็น Layer ถ้ามีการติดต่อกันต้องคุยกันผ่าน validatorcoordinator ในการ broadcast transaction การ sync ข้อมูล ธุรกรรมที่ submit ที่ validator ใด validator นั้นทำหน้าที่ verify เมื่อถึงรอบที่ตัวเองได้ถูกเลือกให้ทำหน้าที่ commit ธุรกรรมลงใน Blockchain เมื่อธุรกรรมถูกบันทึกก็มีการ broadcast ไปยังตัวอื่นๆ ให้รับทราบด้วย
