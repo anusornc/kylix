@@ -125,4 +125,3 @@
 - **Total Tasks:** 63
 - **Completion Rate:** 43%
 ![Kylix Project Overview](./images/kylix-1.jpg)
-![Kylix Project Overview](keylix-1.jpg)
