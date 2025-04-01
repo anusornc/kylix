@@ -125,4 +125,6 @@
 - **Total Tasks:** 63
 - **Completion Rate:** 43%
 
-![Kylix Project Overview](./keylix-1.jpg)
+---
+
+**Next Steps Recommendation:** Focus on the Client-Validator Separation tasks as these will establish a proper foundation for both the immediate research publication and future multi-node extension of the system.
