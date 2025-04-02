@@ -1,0 +1,74 @@
+<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
+ <title>PROV-O Ontology Integration in Kylix</title>
+ <!-- Background with Subtle Gradient -->
+ <defs>
+  <linearGradient y2="100%" x2="0%" y1="0%" x1="0%" id="entityGrad">
+   <stop stop-color="#3498db" offset="0%"/>
+   <stop stop-color="#2980b9" offset="100%"/>
+  </linearGradient>
+  <linearGradient y2="100%" x2="0%" y1="0%" x1="0%" id="activityGrad">
+   <stop stop-color="#2ecc71" offset="0%"/>
+   <stop stop-color="#27ae60" offset="100%"/>
+  </linearGradient>
+  <linearGradient y2="100%" x2="0%" y1="0%" x1="0%" id="agentGrad">
+   <stop stop-color="#e74c3c" offset="0%"/>
+   <stop stop-color="#c0392b" offset="100%"/>
+  </linearGradient>
+ </defs>
+ <!-- Title with Shadow -->
+ <defs>
+  <filter id="titleShadow"/>
+ </defs>
+ <!-- Entity -->
+ <!-- Activity -->
+ <!-- Agent -->
+ <!-- Relationships with Arrows and Labels -->
+ <defs>
+  <marker markerUnits="strokeWidth" orient="auto" refY="3" refX="9" markerHeight="10" markerWidth="10" id="arrow">
+   <path id="svg_1" fill="#34495e" d="m0,0l0,6l9,-3l-9,-3z"/>
+  </marker>
+ </defs>
+ <!-- wasGeneratedBy (Entity -> Activity) -->
+ <!-- wasAttributedTo (Activity -> Agent) -->
+ <!-- wasDerivedFrom (Entity -> Agent) -->
+ <!-- Glow Effect -->
+ <defs>
+  <filter id="glow">
+   <feGaussianBlur result="blur" stdDeviation="2"/>
+  </filter>
+ </defs>
+ <!-- Footer Note -->
+ <g>
+  <title>Layer 1</title>
+  <text id="svg_3" filter="url(#titleShadow)" fill="#2c3e50" font-weight="bold" font-family="Arial" font-size="18" text-anchor="middle" y="25" x="300">PROV-O Ontology Relationships in Kylix</text>
+  <g id="svg_4">
+
+   <rect id="svg_5" filter="url(#glow)" rx="12" fill="url(#entityGrad)" height="60" width="110" y="90" x="41"/>
+   <text id="svg_6" font-weight="bold" fill="white" font-family="Arial" font-size="14" text-anchor="middle" y="115" x="96">Entity</text>
+   <text id="svg_7" fill="#ecf0f1" font-family="Arial" font-size="10" text-anchor="middle" y="135" x="96">"document1"</text>
+  </g>
+  <g id="svg_8">
+
+   <rect id="svg_9" filter="url(#glow)" rx="12" fill="url(#activityGrad)" height="60" width="110" y="90" x="245"/>
+   <text id="svg_10" font-weight="bold" fill="white" font-family="Arial" font-size="14" text-anchor="middle" y="115" x="300">Activity</text>
+   <text id="svg_11" fill="#ecf0f1" font-family="Arial" font-size="10" text-anchor="middle" y="135" x="300">"data_processing"</text>
+  </g>
+  <g id="svg_12">
+
+   <rect id="svg_13" filter="url(#glow)" rx="12" fill="url(#agentGrad)" height="60" width="110" y="89" x="467"/>
+   <text id="svg_14" font-weight="bold" fill="white" font-family="Arial" font-size="14" text-anchor="middle" y="114" x="522">Agent</text>
+   <text id="svg_15" fill="#ecf0f1" font-family="Arial" font-size="10" text-anchor="middle" y="134" x="522">"analyst1"</text>
+  </g>
+  <path stroke="#34495e" id="svg_16" marker-end="url(#arrow)" stroke-dasharray="5,5" stroke-width="2" fill="none" d="m147,118q65.33333,-56 98,0"/>
+  <rect stroke="#34495e" id="svg_17" rx="5" fill="#ffffff" height="20" width="97" y="45" x="251"/>
+  <text id="svg_18" fill="#34495e" font-family="Arial" font-size="10" text-anchor="middle" y="58" x="299.5">wasGeneratedBy</text>
+  <path transform="rotate(1.26668 408.501 106.464)" stroke="#34495e" id="svg_19" marker-end="url(#arrow)" stroke-dasharray="5,5" stroke-width="2" fill="none" d="m354.99487,121.46435q61.61288,-60 107.01185,0"/>
+  <rect stroke="#34495e" id="svg_20" rx="5" fill="#ffffff" height="20" width="97.00001" y="215" x="252"/>
+  <text transform="matrix(0.95783 0 0 1 20.4766 0)" stroke="null" id="svg_21" fill="#34495e" font-family="Arial" font-size="10" text-anchor="middle" y="228" x="294.44001">wasAttributedTo</text>
+  <path stroke="#34495e" id="svg_22" marker-end="url(#arrow)" stroke-dasharray="5,5" stroke-width="2" fill="none" d="m153,136q103.66667,48 311,0"/>
+  <rect stroke="#34495e" id="svg_23" rx="5" fill="#ffffff" height="20" width="100" y="185" x="250"/>
+  <text id="svg_24" fill="#34495e" font-family="Arial" font-size="10" text-anchor="middle" y="198" x="300">wasDerivedFrom</text>
+  <text transform="matrix(1.16685 0 0 1.21053 -40.5561 -66.9522)" stroke="null" id="svg_25" fill="#7f8c8d" font-family="Arial" font-size="10" text-anchor="middle" y="286.76987" x="288.85893">Integrated with Kylix DAG</text>
+  <text xml:space="preserve" text-anchor="start" font-family="Arial" font-size="18" stroke-width="0" id="svg_26" y="27.5" x="164.5" fill="#000000">PROV-O Ontology Relationships</text>
+ </g>
+</svg>
