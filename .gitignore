@@ -62,4 +62,7 @@ erl_crash.dump
 # Crash reports
 crash_dump.*
 
+# Temporary files
+CLAUDE.md
+lib/.DS_Store
 .DS_Store

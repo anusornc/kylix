@@ -36,7 +36,8 @@ defmodule Kylix.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test]},              #use for code analysis
       {:dialyxir, "~> 1.3", only: [:dev], runtime: false},  #use for static analysis
       {:ex_doc, "~> 0.29", only: :dev, runtime: false},     #use for documentation
-      {:meck, "~> 1.0.0", only: :test}                    #use for mocking
+      {:meck, "~> 1.0.0", only: :test},                    #use for mocking
+      {:nimble_parsec, "~> 1.4.2"}       # use for parsing
     ]
   end
 end
