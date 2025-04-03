@@ -53,9 +53,11 @@ defmodule Kylix.Query.SparqlEngineTest do
       assert pattern.p == "knows"
 
       # Check for the second pattern about "lives" in "Paris"
-      has_lives_pattern = Enum.any?(parsed.patterns, fn p ->
-        p.p == "lives" && p.o == "Paris"
-      end)
+      has_lives_pattern =
+        Enum.any?(parsed.patterns, fn p ->
+          p.p == "lives" && p.o == "Paris"
+        end)
+
       assert has_lives_pattern
     end
 
@@ -151,9 +153,11 @@ defmodule Kylix.Query.SparqlEngineTest do
       assert Map.has_key?(result, "o")
 
       # Verify our test node is in the results
-      test_node = Enum.find(results, fn r ->
-        r["s"] == "TestSubject" && r["p"] == "TestPredicate" && r["o"] == "TestObject"
-      end)
+      test_node =
+        Enum.find(results, fn r ->
+          r["s"] == "TestSubject" && r["p"] == "TestPredicate" && r["o"] == "TestObject"
+        end)
+
       assert test_node != nil
     end
 
@@ -215,13 +219,15 @@ defmodule Kylix.Query.SparqlEngineTest do
       assert length(results) == 2
 
       # Check that both of our specific test results are included
-      knows_bob = Enum.find(results, fn r ->
-        r["s"] == "Alice" && r["p"] == "knows" && r["o"] == "Bob"
-      end)
+      knows_bob =
+        Enum.find(results, fn r ->
+          r["s"] == "Alice" && r["p"] == "knows" && r["o"] == "Bob"
+        end)
 
-      likes_coffee = Enum.find(results, fn r ->
-        r["s"] == "Alice" && r["p"] == "likes" && r["o"] == "Coffee"
-      end)
+      likes_coffee =
+        Enum.find(results, fn r ->
+          r["s"] == "Alice" && r["p"] == "likes" && r["o"] == "Coffee"
+        end)
 
       assert knows_bob != nil
       assert likes_coffee != nil
@@ -313,6 +319,7 @@ defmodule Kylix.Query.SparqlEngineTest do
 
       # Find results for Bob (who doesn't have an email)
       bob_results = Enum.filter(results, fn r -> r["friend"] == "Bob" end)
+
       if length(bob_results) > 0 do
         bob_result = hd(bob_results)
         assert bob_result["email"] == nil
@@ -468,11 +475,15 @@ defmodule Kylix.Query.SparqlEngineTest do
       })
 
       query = """
-      SELECT ?person (COUNT(?friend) AS ?friendCount) WHERE {
-        ?person "knows" ?friend .
-        FILTER(?person != "Dave") .
-        OPTIONAL { ?friend "likes" ?interest }
-      } GROUP BY ?person ORDER BY DESC(?friendCount) LIMIT 2
+      SELECT ?person (COUNT(?friend) AS ?friendCount)
+      WHERE {
+      ?person "knows" ?friend .
+      FILTER(?person != "Dave") .
+      OPTIONAL { ?friend "likes" ?interest }
+      }
+      GROUP BY ?person
+      ORDER BY DESC(?friendCount)
+      LIMIT 2
       """
 
       # Make sure the aggregation aliases get properly set up
@@ -527,9 +538,10 @@ defmodule Kylix.Query.SparqlEngineTest do
       assert length(results) > 0
 
       # Check if we have the expected pattern of Alice -> Bob -> Charlie
-      alice_result = Enum.find(results, fn r ->
-        r["person"] == "Alice" && r["friend"] == "Bob" && r["friendOfFriend"] == "Charlie"
-      end)
+      alice_result =
+        Enum.find(results, fn r ->
+          r["person"] == "Alice" && r["friend"] == "Bob" && r["friendOfFriend"] == "Charlie"
+        end)
 
       # In case we don't find it directly, check that at minimum both Alice and Charlie exist
       if alice_result == nil do

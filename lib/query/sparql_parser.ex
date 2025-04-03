@@ -165,14 +165,18 @@ defmodule Kylix.Query.SparqlParser do
 
   defcombinatorp(:union_pattern, union_pattern)
 
+  # Updated inner_patterns_list
   inner_patterns_list =
-    choice([
-      triple_pattern,
-      filter_condition,
-      parsec(:optional_pattern),
-      parsec(:union_pattern)
-    ])
-    |> repeat()
+    repeat(
+      choice([
+        triple_pattern,
+        filter_condition,
+        parsec(:optional_pattern),
+        parsec(:union_pattern)
+      ])
+      |> ignore(optional_whitespace)
+    )
+    |> lookahead_not(string("GROUP BY") |> string("ORDER BY") |> string("LIMIT") |> string("OFFSET"))
     |> tag(:patterns)
 
   defcombinatorp(:inner_patterns_list, inner_patterns_list)
@@ -257,7 +261,12 @@ defmodule Kylix.Query.SparqlParser do
     ignore(string("("))
     |> concat(aggregate_function)
     |> ignore(string("("))
-    |> optional(string("DISTINCT") |> replace(true) |> unwrap_and_tag(:distinct) |> ignore(whitespace))
+    |> optional(
+      string("DISTINCT")
+      |> replace(true)
+      |> unwrap_and_tag(:distinct)
+      |> ignore(whitespace)
+    )
     |> concat(variable)
     |> ignore(string(")"))
     |> optional(
@@ -299,10 +308,11 @@ defmodule Kylix.Query.SparqlParser do
     select_clause
     |> ignore(optional_whitespace)
     |> concat(where_clause)
-    |> optional(ignore(whitespace) |> concat(group_by_clause))
-    |> optional(ignore(whitespace) |> concat(order_by_clause))
-    |> optional(ignore(whitespace) |> concat(limit_clause))
-    |> optional(ignore(whitespace) |> concat(offset_clause))
+    |> ignore(optional_whitespace)
+    |> optional(concat(group_by_clause, ignore(optional_whitespace)))
+    |> optional(concat(order_by_clause, ignore(optional_whitespace)))
+    |> optional(concat(limit_clause, ignore(optional_whitespace)))
+    |> optional(concat(offset_clause, ignore(optional_whitespace)))
     |> eos()
 
   defparsec(:parse_query, sparql_query)
@@ -311,22 +321,29 @@ defmodule Kylix.Query.SparqlParser do
   Parses a SPARQL query string into a structured query representation.
   """
   def parse(query) do
+    IO.inspect(query, label: "Raw query input to parser")
     try do
       normalized_query = normalize_query(query)
+      Logger.debug("Parsing query: #{normalized_query}")
       case parse_query(normalized_query) do
         {:ok, parsed, "", _, _, _} ->
+          IO.inspect(parsed, label: "Parsed before conversion")
           IO.inspect(parsed, label: "Parsed")
           query_structure = convert_to_query_structure(parsed)
           {:ok, query_structure}
 
         {:ok, _, rest, _, _, _} ->
+          Logger.error("Incomplete parse, remaining: #{rest}")
           {:error, "Failed to parse entire query. Stopped at: #{rest}"}
 
         {:error, reason, rest, _, _, _} ->
+          Logger.error("Parse error details - reason: #{reason}, at: #{rest}")
           {:error, "Parse error: #{reason}, at: #{rest}"}
       end
     rescue
-      e -> {:error, "SPARQL parse error: #{Exception.message(e)}"}
+      e ->
+        Logger.error("Exception in parse: #{Exception.message(e)}")
+        {:error, "SPARQL parse error: #{Exception.message(e)}"}
     end
   end
 
@@ -337,7 +354,9 @@ defmodule Kylix.Query.SparqlParser do
   end
 
   defp convert_to_query_structure(parsed) do
-    {variables, aggregates, has_aggregates} = process_select_items(Keyword.get(parsed, :select, []))
+    {variables, aggregates, has_aggregates} =
+      process_select_items(Keyword.get(parsed, :select, []))
+
     where_info = Keyword.get(parsed, :where, [{:patterns, []}])
     patterns_list = Keyword.get(where_info, :patterns, [])
     {patterns, filters, optionals, unions} = process_where_clause(patterns_list)
@@ -363,17 +382,29 @@ defmodule Kylix.Query.SparqlParser do
     Enum.reduce(select_items, {[], [], false}, fn
       {:variable, var}, {vars, aggs, has_aggs} ->
         {[var | vars], aggs, has_aggs}
+
       {:aggregate, agg_info}, {vars, aggs, _} ->
         function = Keyword.get(agg_info, :function)
         var = Keyword.get(agg_info, :variable)
         distinct = Keyword.get(agg_info, :distinct, false)
-        alias_var = case Keyword.get(agg_info, :alias) do
-          {:variable, alias_name} -> alias_name
-          nil -> "#{String.downcase(function)}_#{var}"
-        end
-        agg = %{function: String.downcase(function) |> String.to_atom(), variable: var, distinct: distinct, alias: alias_var}
+
+        alias_var =
+          case Keyword.get(agg_info, :alias) do
+            {:variable, alias_name} -> alias_name
+            nil -> "#{String.downcase(function)}_#{var}"
+          end
+
+        agg = %{
+          function: String.downcase(function) |> String.to_atom(),
+          variable: var,
+          distinct: distinct,
+          alias: alias_var
+        }
+
         {[alias_var | vars], [agg | aggs], true}
-      _, acc -> acc
+
+      _, acc ->
+        acc
     end)
   end
 
@@ -382,30 +413,46 @@ defmodule Kylix.Query.SparqlParser do
       {:triple, [subj, pred, obj]}, {patterns, filters, optionals, unions} ->
         pattern = %{s: process_node(subj), p: process_node(pred), o: process_node(obj)}
         {[pattern | patterns], filters, optionals, unions}
+
       {:filter, [expr]}, {patterns, filters, optionals, unions} ->
         filter = process_filter(expr)
         {patterns, [filter | filters], optionals, unions}
+
       {:optional, opt_info}, {patterns, filters, optionals, unions} ->
         opt_patterns = opt_info[:patterns] || []
         {opt_patterns_list, opt_filters, nested_optionals, _} = process_where_clause(opt_patterns)
-        optional = %{patterns: opt_patterns_list, filters: opt_filters, optionals: nested_optionals}
+
+        optional = %{
+          patterns: opt_patterns_list,
+          filters: opt_filters,
+          optionals: nested_optionals
+        }
+
         {patterns, filters, [optional | optionals], unions}
-      {:union, [{:patterns, left_patterns}, {:patterns, right_patterns}]}, {patterns, filters, optionals, unions} ->
+
+      {:union, [{:patterns, left_patterns}, {:patterns, right_patterns}]},
+      {patterns, filters, optionals, unions} ->
         {left_pats, left_fils, left_opts, _} = process_where_clause(left_patterns)
         {right_pats, right_fils, right_opts, _} = process_where_clause(right_patterns)
+
         union = %{
           left: %{patterns: left_pats, filters: left_fils, optionals: left_opts},
           right: %{patterns: right_pats, filters: right_fils, optionals: right_opts}
         }
+
         {patterns, filters, optionals, [union | unions]}
-      _, acc -> acc
+
+      _, acc ->
+        acc
     end)
     |> then(fn {patterns, filters, optionals, unions} ->
-      {Enum.reverse(patterns), Enum.reverse(filters), Enum.reverse(optionals), Enum.reverse(unions)}
+      {Enum.reverse(patterns), Enum.reverse(filters), Enum.reverse(optionals),
+       Enum.reverse(unions)}
     end)
   end
 
   defp process_node({:variable, _var}), do: nil
+
   defp process_node({:literal_with_meta, [{:literal, value} | rest]}) do
     case rest do
       [{:lang, lang}] -> "#{value}@#{lang}"
@@ -414,6 +461,7 @@ defmodule Kylix.Query.SparqlParser do
       _ -> nil
     end
   end
+
   defp process_node({:iri, iri}), do: iri
   defp process_node({:prov, prov}), do: prov
   defp process_node(_), do: nil
@@ -423,15 +471,17 @@ defmodule Kylix.Query.SparqlParser do
   defp process_datatype(_), do: nil
 
   defp process_filter({:filter_expression, [left, {:operator, op}, right]}) do
-    filter_type = case op do
-      "=" -> :equality
-      "!=" -> :inequality
-      ">" -> :greater_than
-      "<" -> :less_than
-      ">=" -> :greater_than_equal
-      "<=" -> :less_than_equal
-      _ -> :unknown
-    end
+    filter_type =
+      case op do
+        "=" -> :equality
+        "!=" -> :inequality
+        ">" -> :greater_than
+        "<" -> :less_than
+        ">=" -> :greater_than_equal
+        "<=" -> :less_than_equal
+        _ -> :unknown
+      end
+
     %{
       type: filter_type,
       variable: extract_variable(left),
@@ -460,15 +510,21 @@ defmodule Kylix.Query.SparqlParser do
 
   defp extract_order_by(parsed) do
     case Keyword.get(parsed, :order_by) do
-      nil -> []
+      nil ->
+        []
+
       order_by ->
         Enum.map(order_by, fn
           {:order_with_dir, [{:direction, dir}, {:variable, var}]} ->
             %{variable: var, direction: dir}
+
           {:order_no_dir, [map]} ->
             map
-          _ -> nil
-        end) |> Enum.filter(&(&1 != nil))
+
+          _ ->
+            nil
+        end)
+        |> Enum.filter(&(&1 != nil))
     end
   end
 
