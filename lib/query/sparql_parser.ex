@@ -337,49 +337,26 @@ defmodule Kylix.Query.SparqlParser do
   end
 
   defp convert_to_query_structure(parsed) do
-    select_info = extract_select_info(parsed)
+    {variables, aggregates, has_aggregates} = process_select_items(Keyword.get(parsed, :select, []))
     where_info = Keyword.get(parsed, :where, [{:patterns, []}])
     patterns_list = Keyword.get(where_info, :patterns, [])
-    group_by = extract_group_by(parsed)
-    order_by = extract_order_by(parsed)
-    limit = extract_limit(parsed)
-    offset = extract_offset(parsed)
-
     {patterns, filters, optionals, unions} = process_where_clause(patterns_list)
 
     %{
       type: :select,
-      variables: select_info.variables,
+      variables: Enum.reverse(variables),
       patterns: patterns,
       filters: filters,
       optionals: optionals,
       unions: unions,
-      has_aggregates: select_info.has_aggregates,
-      aggregates: select_info.aggregates,
-      group_by: group_by,
-      order_by: order_by,
-      limit: limit,
-      offset: offset,
+      has_aggregates: has_aggregates,
+      aggregates: aggregates,
+      group_by: extract_group_by(parsed),
+      order_by: extract_order_by(parsed),
+      limit: extract_limit(parsed),
+      offset: extract_offset(parsed),
       pattern_filters: []
     }
-  end
-
-  defp extract_select_info(parsed) do
-    select_clause = Keyword.get(parsed, :select, [])
-    is_distinct = Keyword.get(select_clause, :distinct, false)
-    select_items = Keyword.get(select_clause, :select, [])
-
-    if Keyword.get(select_clause, :select_type) == :all do
-      %{variables: [:all], is_distinct: is_distinct, has_aggregates: false, aggregates: []}
-    else
-      {variables, aggregates, has_aggregates} = process_select_items(select_items)
-      %{
-        variables: variables,
-        is_distinct: is_distinct,
-        has_aggregates: has_aggregates,
-        aggregates: aggregates
-      }
-    end
   end
 
   defp process_select_items(select_items) do
@@ -401,7 +378,7 @@ defmodule Kylix.Query.SparqlParser do
   end
 
   defp process_where_clause(where_items) do
-    Enum.reduce(List.wrap(where_items), {[], [], [], []}, fn
+    Enum.reduce(where_items, {[], [], [], []}, fn
       {:triple, [subj, pred, obj]}, {patterns, filters, optionals, unions} ->
         pattern = %{s: process_node(subj), p: process_node(pred), o: process_node(obj)}
         {[pattern | patterns], filters, optionals, unions}
@@ -409,17 +386,16 @@ defmodule Kylix.Query.SparqlParser do
         filter = process_filter(expr)
         {patterns, [filter | filters], optionals, unions}
       {:optional, opt_info}, {patterns, filters, optionals, unions} ->
-        opt_patterns = Keyword.get(opt_info, :patterns, [])
+        opt_patterns = opt_info[:patterns] || []
         {opt_patterns_list, opt_filters, nested_optionals, _} = process_where_clause(opt_patterns)
         optional = %{patterns: opt_patterns_list, filters: opt_filters, optionals: nested_optionals}
         {patterns, filters, [optional | optionals], unions}
-      {:union, union_info}, {patterns, filters, optionals, unions} ->
-        [left_info, right_info] = union_info
-        {left_patterns, left_filters, left_optionals, _} = process_where_clause(Keyword.get(left_info, :patterns, []))
-        {right_patterns, right_filters, right_optionals, _} = process_where_clause(Keyword.get(right_info, :patterns, []))
+      {:union, [{:patterns, left_patterns}, {:patterns, right_patterns}]}, {patterns, filters, optionals, unions} ->
+        {left_pats, left_fils, left_opts, _} = process_where_clause(left_patterns)
+        {right_pats, right_fils, right_opts, _} = process_where_clause(right_patterns)
         union = %{
-          left: %{patterns: left_patterns, filters: left_filters, optionals: left_optionals},
-          right: %{patterns: right_patterns, filters: right_filters, optionals: right_optionals}
+          left: %{patterns: left_pats, filters: left_fils, optionals: left_opts},
+          right: %{patterns: right_pats, filters: right_fils, optionals: right_opts}
         }
         {patterns, filters, optionals, [union | unions]}
       _, acc -> acc
