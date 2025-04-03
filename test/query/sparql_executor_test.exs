@@ -13,7 +13,7 @@ defmodule Kylix.Query.SparqlExecutor do
 
   # Define parsers for advanced filtering and pattern matching
 
-  # Whitespace handling
+  # Whitespace handling - prefix with underscore to indicate intentionally unused
   _whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1)
   optional_whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 0)
 
