@@ -1,46 +1,48 @@
-@startuml
-left to right direction
+@startuml KylixQueryFullArchitecture
+!theme plain
 
-package "Query Layer" {
-  [SparqlParser] as SparqlParser
-  [SparqlExecutor] as SparqlExecutor
-  [SparqlOptimizer] as SparqlOptimizer
-  [SparqlAggregator] as SparqlAggregator
-  [VariableMapper] as VariableMapper
+package "Query Components" {
+    [SparqlEngine] #LightPink
+    [SparqlParser] #LightBlue
+    [SparqlExecutor] #LightGreen
+    [SparqlOptimizer] #LightYellow
+    [SparqlAggregator] #LightCyan
+    [VariableMapper] #LightGray
 }
 
-package "Server Layer" {
-  [BlockchainServer] as BlockchainServer
-  [TransactionQueue] as TransactionQueue
-  [ValidatorNetwork] as ValidatorNetwork
+package "Storage" {
+    [StorageCoordinator] #LightYellow
+    [DAGEngine] #LightGreen
+    [PersistentDAGEngine] #LightBlue
 }
 
-package "Storage Layer" {
-  [Storage.Coordinator] as Coordinator
-  [DAGEngine] as DAGEngine
-  [PersistentDAGEngine] as PersistentDAGEngine
+package "Blockchain" {
+    [BlockchainServer] #LightBlue
 }
 
-package "Consensus Layer" {
-  [ValidatorCoordinator] as ValidatorCoordinator
-}
+' Interaction Flows
+SparqlEngine --> SparqlParser : parse query
+SparqlEngine --> SparqlExecutor : execute query
 
-SparqlParser --> SparqlExecutor
-SparqlExecutor --> SparqlOptimizer
-SparqlExecutor --> SparqlAggregator
-SparqlExecutor --> VariableMapper
+SparqlExecutor --> SparqlOptimizer : optimize query
+SparqlExecutor --> SparqlAggregator : apply aggregations
+SparqlExecutor --> VariableMapper : map variables
 
-SparqlExecutor --> BlockchainServer
-BlockchainServer --> TransactionQueue
+SparqlExecutor --> StorageCoordinator : query data
+StorageCoordinator --> DAGEngine : query in-memory
+StorageCoordinator --> PersistentDAGEngine : query persistent storage
 
-BlockchainServer --> Coordinator
-TransactionQueue --> Coordinator
-ValidatorNetwork --> Coordinator
+SparqlEngine --> BlockchainServer : access state
 
-Coordinator --> DAGEngine
-Coordinator --> PersistentDAGEngine
+' Component Responsibilities
+note right of StorageCoordinator
+  Manages data flow between
+  in-memory and persistent storage
+end note
 
-BlockchainServer --> ValidatorCoordinator
-TransactionQueue --> ValidatorCoordinator
+note right of SparqlExecutor
+  Coordinates query execution
+  across storage engines
+end note
 
 @enduml

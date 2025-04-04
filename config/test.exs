@@ -9,4 +9,4 @@ config :kylix,
   clientwallet: "config/client_wallets"
 
 # Quiet logging in tests
-config :logger, level: :debug
+config :logger, level: :warning
