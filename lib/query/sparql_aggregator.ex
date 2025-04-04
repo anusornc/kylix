@@ -392,7 +392,7 @@ defmodule Kylix.Query.SparqlAggregator do
       nil -> []
     end
 
-    # Update the query structure
+    # Update the query structure with aggregates and group by variables
     %{query_structure |
       aggregates: aggregates,
       group_by: group_by_vars
