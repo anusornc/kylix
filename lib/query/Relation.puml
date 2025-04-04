@@ -1,0 +1,46 @@
+@startuml
+left to right direction
+
+package "Query Layer" {
+  [SparqlParser] as SparqlParser
+  [SparqlExecutor] as SparqlExecutor
+  [SparqlOptimizer] as SparqlOptimizer
+  [SparqlAggregator] as SparqlAggregator
+  [VariableMapper] as VariableMapper
+}
+
+package "Server Layer" {
+  [BlockchainServer] as BlockchainServer
+  [TransactionQueue] as TransactionQueue
+  [ValidatorNetwork] as ValidatorNetwork
+}
+
+package "Storage Layer" {
+  [Storage.Coordinator] as Coordinator
+  [DAGEngine] as DAGEngine
+  [PersistentDAGEngine] as PersistentDAGEngine
+}
+
+package "Consensus Layer" {
+  [ValidatorCoordinator] as ValidatorCoordinator
+}
+
+SparqlParser --> SparqlExecutor
+SparqlExecutor --> SparqlOptimizer
+SparqlExecutor --> SparqlAggregator
+SparqlExecutor --> VariableMapper
+
+SparqlExecutor --> BlockchainServer
+BlockchainServer --> TransactionQueue
+
+BlockchainServer --> Coordinator
+TransactionQueue --> Coordinator
+ValidatorNetwork --> Coordinator
+
+Coordinator --> DAGEngine
+Coordinator --> PersistentDAGEngine
+
+BlockchainServer --> ValidatorCoordinator
+TransactionQueue --> ValidatorCoordinator
+
+@enduml
