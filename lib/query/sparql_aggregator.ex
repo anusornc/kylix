@@ -2,10 +2,205 @@ defmodule Kylix.Query.SparqlAggregator do
   @moduledoc """
   Handles SPARQL aggregation functions for Kylix SPARQL queries.
 
-  Supports functions like COUNT, SUM, AVG, MIN, MAX, GROUP_CONCAT, etc.
+  Supports standard SPARQL aggregation functions like COUNT, SUM, AVG, MIN, MAX, and GROUP_CONCAT
+  with both regular and DISTINCT variants.
   """
 
+  import NimbleParsec
   require Logger
+
+  # Parser definitions for aggregate expressions
+
+  # Basic building blocks
+  whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1)
+  _optional_whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 0)
+
+  # Variable (e.g., ?varname)
+  variable_name =
+    ignore(string("?"))
+    |> ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1)
+    |> unwrap_and_tag(:variable)
+
+  # DISTINCT keyword
+  distinct_keyword =
+    string("DISTINCT")
+    |> replace(true)
+    |> unwrap_and_tag(:distinct)
+    |> ignore(whitespace)
+
+  # Aggregate function names
+  aggregate_function =
+    choice([
+      string("COUNT") |> replace(:count),
+      string("SUM") |> replace(:sum),
+      string("AVG") |> replace(:avg),
+      string("MIN") |> replace(:min),
+      string("MAX") |> replace(:max),
+      string("GROUP_CONCAT") |> replace(:group_concat)
+    ])
+    |> unwrap_and_tag(:function)
+
+  # SEPARATOR option for GROUP_CONCAT
+  separator_option =
+    ignore(whitespace)
+    |> ignore(string("SEPARATOR"))
+    |> ignore(whitespace)
+    |> choice([
+      ignore(string("'"))
+      |> utf8_string([not: ?'], min: 0)
+      |> ignore(string("'")),
+      ignore(string("\""))
+      |> utf8_string([not: ?"], min: 0)
+      |> ignore(string("\""))
+    ])
+    |> unwrap_and_tag(:separator)
+
+  # AS clause for aliasing
+  as_clause =
+    ignore(whitespace)
+    |> ignore(string("AS"))
+    |> ignore(whitespace)
+    |> concat(ignore(string("?")) |>
+              ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1) |>
+              unwrap_and_tag(:alias))
+
+  # Build parsers for different aggregate expressions
+
+  # COUNT expression - with or without DISTINCT
+  count_expression =
+    ignore(string("("))
+    |> concat(aggregate_function)
+    |> ignore(string("("))
+    |> optional(distinct_keyword)
+    |> concat(variable_name)
+    |> ignore(string(")"))
+    |> optional(as_clause)
+    |> ignore(string(")"))
+    |> post_traverse(:finalize_count)
+
+  # SUM/AVG/MIN/MAX expression
+  arithmetic_expression =
+    ignore(string("("))
+    |> concat(aggregate_function)
+    |> ignore(string("("))
+    |> concat(variable_name)
+    |> ignore(string(")"))
+    |> optional(as_clause)
+    |> ignore(string(")"))
+    |> post_traverse(:finalize_arithmetic)
+
+  # GROUP_CONCAT expression
+  group_concat_expression =
+    ignore(string("("))
+    |> concat(aggregate_function)
+    |> ignore(string("("))
+    |> concat(variable_name)
+    |> optional(separator_option)
+    |> ignore(string(")"))
+    |> optional(as_clause)
+    |> ignore(string(")"))
+    |> post_traverse(:finalize_group_concat)
+
+  # Combined aggregate expression parser
+  defparsec :parse_aggregate_expr,
+    choice([
+      count_expression,
+      arithmetic_expression,
+      group_concat_expression
+    ])
+
+  # Post-traversal handlers to finalize parsed results into a map
+
+  defp finalize_count(_rest, args, context, _line, _offset) do
+    # Extract components
+    function = Keyword.get(args, :function)
+    variable = Keyword.get(args, :variable)
+    distinct = Keyword.get(args, :distinct, false)
+    alias_name = Keyword.get(args, :alias, "count_#{if distinct, do: "distinct_", else: ""}#{variable}")
+
+    # Build the result map
+    result = %{
+      function: function,
+      variable: variable,
+      distinct: distinct,
+      alias: alias_name
+    }
+
+    # Return the result
+    {[result], context}
+  end
+
+  defp finalize_arithmetic(_rest, args, context, _line, _offset) do
+    # Extract components
+    function = Keyword.get(args, :function)
+    variable = Keyword.get(args, :variable)
+    alias_name = Keyword.get(args, :alias, "#{function}_#{variable}")
+
+    # Build the result map
+    result = %{
+      function: function,
+      variable: variable,
+      distinct: false, # Arithmetic functions don't support DISTINCT
+      alias: alias_name
+    }
+
+    # Return the result
+    {[result], context}
+  end
+
+  defp finalize_group_concat(_rest, args, context, _line, _offset) do
+    # Extract components
+    variable = Keyword.get(args, :variable)
+    separator = Keyword.get(args, :separator, ",")
+    alias_name = Keyword.get(args, :alias, "group_concat_#{variable}")
+
+    # Build the result map
+    result = %{
+      function: :group_concat,
+      variable: variable,
+      distinct: false,
+      options: %{separator: separator},
+      alias: alias_name
+    }
+
+    # Return the result
+    {[result], context}
+  end
+
+  @doc """
+  Parses an aggregate expression using NimbleParsec.
+
+  ## Examples
+
+      iex> Kylix.Query.SparqlAggregator.parse_aggregate_expression("COUNT(?s)")
+      {:ok, %{function: :count, variable: "s", distinct: false, alias: "count_s"}}
+
+      iex> Kylix.Query.SparqlAggregator.parse_aggregate_expression("COUNT(DISTINCT ?s)")
+      {:ok, %{function: :count, variable: "s", distinct: true, alias: "count_distinct_s"}}
+
+      iex> Kylix.Query.SparqlAggregator.parse_aggregate_expression("COUNT(?s AS ?totalCount)")
+      {:ok, %{function: :count, variable: "s", distinct: false, alias: "totalCount"}}
+
+      iex> Kylix.Query.SparqlAggregator.parse_aggregate_expression("GROUP_CONCAT(?name SEPARATOR \"; \")")
+      {:ok, %{function: :group_concat, variable: "name", distinct: false, options: %{separator: "; "}, alias: "group_concat_name"}}
+  """
+  def parse_aggregate_expression(expr) when is_binary(expr) do
+    # Log the input expression for debugging
+    Logger.debug("Parsing aggregate expression: #{expr}")
+
+    case parse_aggregate_expr(expr) do
+      {:ok, [result], "", _context, _line, _column} ->
+        {:ok, result}
+
+      {:ok, _result, rest, _context, _line, _column} ->
+        Logger.warning("Failed to parse entire aggregate expression. Remaining: #{rest}")
+        {:error, "Failed to parse entire expression: #{expr}"}
+
+      {:error, reason, _rest, _context, _line, _column} ->
+        Logger.error("Error parsing aggregate expression: #{reason}")
+        {:error, "Parse error: #{reason}"}
+    end
+  end
 
   @doc """
   Applies aggregation to query results according to aggregate specifications.
@@ -15,6 +210,7 @@ defmodule Kylix.Query.SparqlAggregator do
   - results: The raw query results
   - aggregates: List of aggregate specifications
   - group_by: List of variables to group by
+  - var_positions: Optional mapping of variables to positions (s, p, o)
 
   ## Returns
 
@@ -199,187 +395,34 @@ defmodule Kylix.Query.SparqlAggregator do
   defp sort_value(other), do: {:other, inspect(other)}
 
   @doc """
-  Parses aggregation expressions from a SPARQL query.
+  Updates the query structure with aggregate specifications extracted from a SELECT clause.
 
-  ## Examples
+  ## Parameters
 
-      iex> parse_aggregate_expression("COUNT(?s)")
-      %{function: :count, variable: "s", distinct: false, alias: "count_s"}
+  - query_structure: The current query structure
+  - select_clause: The SELECT clause from the SPARQL query
 
-      iex> parse_aggregate_expression("COUNT(DISTINCT ?s)")
-      %{function: :count, variable: "s", distinct: true, alias: "count_distinct_s"}
-  """
-  def parse_aggregate_expression(expr) do
-    # Log the input expression
-    Logger.info("Parsing aggregate expression: #{expr}")
+  ## Returns
 
-    # Basic patterns for common aggregates
-    cond do
-      # Handle COUNT with or without DISTINCT
-      String.match?(expr, ~r/COUNT\s*\(\s*(?<distinct>DISTINCT\s+)?\?(?<var>[^\s\)]+)\s*\)/i) ->
-        captures = Regex.named_captures(~r/COUNT\s*\(\s*(?<distinct>DISTINCT\s+)?\?(?<var>[^\s\)]+)\s*\)/i, expr)
-
-        # Check if expr contains AS ?alias
-        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
-        alias_captures = Regex.run(alias_pattern, expr)
-
-        agg_alias = if alias_captures && length(alias_captures) > 1 do
-          # Get the alias from the AS clause
-          Enum.at(alias_captures, 1)
-        else
-          # Default alias is count_var or count_distinct_var
-          "count_#{if captures["distinct"] != "", do: "distinct_", else: ""}#{captures["var"]}"
-        end
-
-        # Create the result
-        result = %{
-          function: :count,
-          variable: captures["var"],
-          distinct: captures["distinct"] != "",
-          alias: agg_alias
-        }
-
-        # Log the parsed result
-        Logger.info("Parsed COUNT expression: #{inspect(result)}")
-        result
-
-      String.match?(expr, ~r/SUM\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
-        captures = Regex.named_captures(~r/SUM\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
-
-        # Check for AS clause
-        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
-        alias_captures = Regex.run(alias_pattern, expr)
-
-        agg_alias = if alias_captures && length(alias_captures) > 1 do
-          Enum.at(alias_captures, 1)
-        else
-          "sum_#{captures["var"]}"
-        end
-
-        %{
-          function: :sum,
-          variable: captures["var"],
-          distinct: false,
-          alias: agg_alias
-        }
-
-      String.match?(expr, ~r/AVG\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
-        captures = Regex.named_captures(~r/AVG\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
-
-        # Check for AS clause
-        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
-        alias_captures = Regex.run(alias_pattern, expr)
-
-        agg_alias = if alias_captures && length(alias_captures) > 1 do
-          Enum.at(alias_captures, 1)
-        else
-          "avg_#{captures["var"]}"
-        end
-
-        %{
-          function: :avg,
-          variable: captures["var"],
-          distinct: false,
-          alias: agg_alias
-        }
-
-      String.match?(expr, ~r/MIN\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
-        captures = Regex.named_captures(~r/MIN\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
-
-        # Check for AS clause
-        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
-        alias_captures = Regex.run(alias_pattern, expr)
-
-        agg_alias = if alias_captures && length(alias_captures) > 1 do
-          Enum.at(alias_captures, 1)
-        else
-          "min_#{captures["var"]}"
-        end
-
-        %{
-          function: :min,
-          variable: captures["var"],
-          distinct: false,
-          alias: agg_alias
-        }
-
-      String.match?(expr, ~r/MAX\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i) ->
-        captures = Regex.named_captures(~r/MAX\s*\(\s*\?(?<var>[^\s\)]+)\s*\)/i, expr)
-
-        # Check for AS clause
-        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
-        alias_captures = Regex.run(alias_pattern, expr)
-
-        agg_alias = if alias_captures && length(alias_captures) > 1 do
-          Enum.at(alias_captures, 1)
-        else
-          "max_#{captures["var"]}"
-        end
-
-        %{
-          function: :max,
-          variable: captures["var"],
-          distinct: false,
-          alias: agg_alias
-        }
-
-      String.match?(expr, ~r/GROUP_CONCAT\s*\(\s*\?(?<var>[^\s\)]+)(\s+SEPARATOR\s+['"](?<sep>[^'"]+)['"])?\s*\)/i) ->
-        captures = Regex.named_captures(~r/GROUP_CONCAT\s*\(\s*\?(?<var>[^\s\)]+)(\s+SEPARATOR\s+['"](?<sep>[^'"]+)['"])?\s*\)/i, expr)
-        separator = if captures["sep"], do: captures["sep"], else: ","
-
-        # Check for AS clause
-        alias_pattern = ~r/AS\s+\?(?<alias>[^\s\)]+)/i
-        alias_captures = Regex.run(alias_pattern, expr)
-
-        agg_alias = if alias_captures && length(alias_captures) > 1 do
-          Enum.at(alias_captures, 1)
-        else
-          "group_concat_#{captures["var"]}"
-        end
-
-        %{
-          function: :group_concat,
-          variable: captures["var"],
-          distinct: false,
-          options: %{separator: separator},
-          alias: agg_alias
-        }
-
-      # Parse the AS clause for aliasing
-      String.match?(expr, ~r/.*\s+AS\s+\?(?<alias>[^\s\)]+)/i) ->
-        captures = Regex.named_captures(~r/.*\s+AS\s+\?(?<alias>[^\s\)]+)/i, expr)
-        # Parse the function part before the AS
-        function_part = String.replace(expr, ~r/\s+AS\s+\?[^\s\)]+/i, "")
-        function_map = parse_aggregate_expression(function_part)
-        Map.put(function_map, :alias, captures["alias"])
-
-      true ->
-        # Default case for unrecognized aggregate
-        Logger.warning("Unrecognized aggregate expression: #{expr}")
-        %{
-          function: :unknown,
-          variable: nil,
-          distinct: false,
-          alias: "unknown_aggregate"
-        }
-    end
-  end
-
-  @doc """
-  Updates the parse_select_query function to handle aggregates.
+  Updated query structure with aggregates and GROUP BY information
   """
   def enhance_query_with_aggregates(query_structure, select_clause) do
-    # Extract aggregate expressions from the select clause
-    aggregate_pattern = ~r/(?<func>COUNT|SUM|AVG|MIN|MAX|GROUP_CONCAT)\s*\((?<expr>[^\)]+)\)/i
+    # Extract aggregate expressions using regex
+    aggregate_pattern = ~r/(?<expr>\((?:COUNT|SUM|AVG|MIN|MAX|GROUP_CONCAT)\s*\(.+?\)\s*(?:AS\s+\?\w+)?\))/i
+    aggregate_matches = Regex.scan(aggregate_pattern, select_clause, capture: :all_names)
 
-    aggregates = Regex.scan(aggregate_pattern, select_clause, capture: :all_names)
-    |> Enum.map(fn [func, expr] ->
-      # Process each aggregate expression
-      parse_aggregate_expression("#{func}(#{expr})")
-    end)
+    # Parse each found aggregate expression
+    aggregates =
+      aggregate_matches
+      |> Enum.flat_map(fn [expr] ->
+        case parse_aggregate_expression(expr) do
+          {:ok, result} -> [result]
+          {:error, _} -> []
+        end
+      end)
 
     # Look for GROUP BY clause
-    group_by_pattern = ~r/GROUP\s+BY\s+(?<vars>.+?)($|\s+HAVING|\s+ORDER|\s+LIMIT)/i
+    group_by_pattern = ~r/GROUP\s+BY\s+(?<vars>.+?)(?:\s+(?:HAVING|\s+ORDER|\s+LIMIT)|\s*$)/i
     group_by_vars = case Regex.named_captures(group_by_pattern, select_clause) do
       %{"vars" => vars} ->
         # Extract variable names from the GROUP BY clause
@@ -392,10 +435,10 @@ defmodule Kylix.Query.SparqlAggregator do
       nil -> []
     end
 
-    # Update the query structure with aggregates and group by variables
-    %{query_structure |
-      aggregates: aggregates,
-      group_by: group_by_vars
-    }
+    # Update the query structure
+    query_structure
+    |> Map.put(:aggregates, aggregates)
+    |> Map.put(:group_by, group_by_vars)
+    |> Map.put(:has_aggregates, !Enum.empty?(aggregates))
   end
 end
