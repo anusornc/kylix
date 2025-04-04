@@ -1,664 +1,544 @@
 defmodule Kylix.Query.SparqlParser do
   @moduledoc """
-  SPARQL Parser for Kylix blockchain queries.
-
-  Parses SPARQL query strings into structured query objects that can be executed
-  against the Kylix blockchain storage.
+  SPARQL Parser for Kylix blockchain queries using NimbleParsec.
   """
 
+  import NimbleParsec
   require Logger
+
+  def add_prov_prefix(id), do: "prov:" <> id
+  def apply_default_order_direction({:variable, var}), do: %{variable: var, direction: :asc}
+
+  whitespace = ascii_string([?\s, ?\n, ?\r, ?\t], min: 1)
+  optional_whitespace = ascii_string([?\s, ?\n, ?\r, ?\t], min: 0)
+
+  variable =
+    ignore(string("?"))
+    |> ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1)
+    |> unwrap_and_tag(:variable)
+
+  double_quoted_content =
+    repeat(
+      choice([
+        ~S(\") |> string() |> replace(?"),
+        ~S(\\) |> string() |> replace(?\\),
+        ~S(\n) |> string() |> replace(?\n),
+        ~S(\r) |> string() |> replace(?\r),
+        ~S(\t) |> string() |> replace(?\t),
+        ascii_string([not: ?", not: ?\\], min: 1)
+      ])
+    )
+    |> reduce({List, :to_string, []})
+
+  single_quoted_content =
+    repeat(
+      choice([
+        ~S(\') |> string() |> replace(?'),
+        ~S(\\) |> string() |> replace(?\\),
+        ~S(\n) |> string() |> replace(?\n),
+        ~S(\r) |> string() |> replace(?\r),
+        ~S(\t) |> string() |> replace(?\t),
+        ascii_string([not: ?', not: ?\\], min: 1)
+      ])
+    )
+    |> reduce({List, :to_string, []})
+
+  double_quoted_literal =
+    ignore(string("\""))
+    |> concat(double_quoted_content)
+    |> ignore(string("\""))
+    |> unwrap_and_tag(:literal)
+
+  single_quoted_literal =
+    ignore(string("'"))
+    |> concat(single_quoted_content)
+    |> ignore(string("'"))
+    |> unwrap_and_tag(:literal)
+
+  simple_literal = choice([double_quoted_literal, single_quoted_literal])
+
+  iri =
+    ignore(string("<"))
+    |> repeat(ascii_string([not: ?>], min: 1))
+    |> reduce({List, :to_string, []})
+    |> ignore(string(">"))
+    |> unwrap_and_tag(:iri)
+
+  prov_prefix =
+    ignore(string("prov:"))
+    |> ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1)
+    |> map({__MODULE__, :add_prov_prefix, []})
+    |> unwrap_and_tag(:prov)
+
+  language_tag =
+    ignore(string("@"))
+    |> ascii_string([?a..?z, ?A..?Z, ?0..?9, ?-], min: 1)
+    |> tag(:lang)
+
+  datatype =
+    ignore(string("^^"))
+    |> choice([prov_prefix, iri])
+    |> tag(:datatype)
+
+  literal_with_meta =
+    simple_literal
+    |> optional(choice([language_tag, datatype]))
+    |> tag(:literal_with_meta)
+
+  node = choice([variable, literal_with_meta, iri, prov_prefix])
+
+  triple_pattern =
+    node
+    |> ignore(whitespace)
+    |> concat(node)
+    |> ignore(whitespace)
+    |> concat(node)
+    |> ignore(optional_whitespace)
+    |> optional(ignore(string(".")))
+    |> ignore(optional_whitespace)
+    |> tag(:triple)
+
+  comparison_operator =
+    choice([
+      string("="),
+      string("!="),
+      string(">"),
+      string("<"),
+      string(">="),
+      string("<=")
+    ])
+    |> unwrap_and_tag(:operator)
+
+  filter_operand = choice([variable, literal_with_meta])
+
+  defcombinatorp(:filter_operand, filter_operand)
+
+  filter_expression =
+    parsec(:filter_operand)
+    |> ignore(optional_whitespace)
+    |> concat(comparison_operator)
+    |> ignore(optional_whitespace)
+    |> concat(parsec(:filter_operand))
+    |> tag(:filter_expression)
+
+  defcombinatorp(:filter_expression, filter_expression)
+
+  filter_condition =
+    ignore(string("FILTER"))
+    |> ignore(optional_whitespace)
+    |> ignore(string("("))
+    |> ignore(optional_whitespace)
+    |> parsec(:filter_expression)
+    |> ignore(optional_whitespace)
+    |> ignore(string(")"))
+    |> tag(:filter)
+
+  defcombinatorp(:patterns_list, parsec(:inner_patterns_list))
+
+  optional_pattern =
+    ignore(string("OPTIONAL"))
+    |> ignore(whitespace)
+    |> ignore(string("{"))
+    |> ignore(optional_whitespace)
+    |> parsec(:patterns_list)
+    |> ignore(optional_whitespace)
+    |> ignore(string("}"))
+    |> tag(:optional)
+
+  defcombinatorp(:optional_pattern, optional_pattern)
+
+  union_pattern =
+    ignore(string("{"))
+    |> ignore(optional_whitespace)
+    |> parsec(:patterns_list)
+    |> ignore(optional_whitespace)
+    |> ignore(string("}"))
+    |> ignore(whitespace)
+    |> ignore(string("UNION"))
+    |> ignore(whitespace)
+    |> ignore(string("{"))
+    |> ignore(optional_whitespace)
+    |> parsec(:patterns_list)
+    |> ignore(optional_whitespace)
+    |> ignore(string("}"))
+    |> tag(:union)
+
+  defcombinatorp(:union_pattern, union_pattern)
+
+  # Updated inner_patterns_list
+  inner_patterns_list =
+    repeat(
+      choice([
+        triple_pattern,
+        filter_condition,
+        parsec(:optional_pattern),
+        parsec(:union_pattern)
+      ])
+      |> ignore(optional_whitespace)
+    )
+    |> lookahead_not(string("GROUP BY") |> string("ORDER BY") |> string("LIMIT") |> string("OFFSET"))
+    |> tag(:patterns)
+
+  defcombinatorp(:inner_patterns_list, inner_patterns_list)
+
+  where_clause =
+    ignore(string("WHERE"))
+    |> ignore(whitespace)
+    |> ignore(string("{"))
+    |> ignore(optional_whitespace)
+    |> parsec(:patterns_list)
+    |> ignore(optional_whitespace)
+    |> ignore(string("}"))
+    |> tag(:where)
+
+  group_by_var =
+    ignore(optional_whitespace)
+    |> concat(variable)
+    |> ignore(optional_whitespace)
+    |> optional(ignore(string(",")))
+
+  group_by_clause =
+    ignore(string("GROUP BY"))
+    |> ignore(whitespace)
+    |> repeat(group_by_var)
+    |> tag(:group_by)
+
+  order_dir_asc = string("ASC") |> replace(:asc) |> unwrap_and_tag(:direction)
+  order_dir_desc = string("DESC") |> replace(:desc) |> unwrap_and_tag(:direction)
+
+  order_expr_with_dir =
+    choice([order_dir_asc, order_dir_desc])
+    |> ignore(string("("))
+    |> ignore(optional_whitespace)
+    |> concat(variable)
+    |> ignore(optional_whitespace)
+    |> ignore(string(")"))
+    |> tag(:order_with_dir)
+
+  order_expr_no_dir =
+    variable
+    |> map({__MODULE__, :apply_default_order_direction, []})
+    |> tag(:order_no_dir)
+
+  order_by_var =
+    ignore(optional_whitespace)
+    |> choice([order_expr_with_dir, order_expr_no_dir])
+    |> ignore(optional_whitespace)
+    |> optional(ignore(string(",")))
+
+  order_by_clause =
+    ignore(string("ORDER BY"))
+    |> ignore(whitespace)
+    |> repeat(order_by_var)
+    |> tag(:order_by)
+
+  integer = integer(min: 1) |> unwrap_and_tag(:value)
+
+  limit_clause =
+    ignore(string("LIMIT"))
+    |> ignore(whitespace)
+    |> concat(integer)
+    |> tag(:limit)
+
+  offset_clause =
+    ignore(string("OFFSET"))
+    |> ignore(whitespace)
+    |> concat(integer)
+    |> tag(:offset)
+
+  aggregate_function =
+    choice([
+      string("COUNT"),
+      string("SUM"),
+      string("AVG"),
+      string("MIN"),
+      string("MAX"),
+      string("GROUP_CONCAT")
+    ])
+    |> unwrap_and_tag(:function)
+
+  aggregate_expression =
+    ignore(string("("))
+    |> concat(aggregate_function)
+    |> ignore(string("("))
+    |> optional(
+      string("DISTINCT")
+      |> replace(true)
+      |> unwrap_and_tag(:distinct)
+      |> ignore(whitespace)
+    )
+    |> concat(variable)
+    |> ignore(string(")"))
+    |> optional(
+      ignore(whitespace)
+      |> ignore(string("AS"))
+      |> ignore(whitespace)
+      |> concat(variable)
+      |> unwrap_and_tag(:alias)
+    )
+    |> ignore(string(")"))
+    |> tag(:aggregate)
+
+  select_item =
+    choice([aggregate_expression, variable])
+    |> ignore(optional_whitespace)
+    |> optional(ignore(string(",")))
+
+  select_star =
+    string("*")
+    |> replace(:all)
+    |> unwrap_and_tag(:select_type)
+
+  select_distinct =
+    string("DISTINCT")
+    |> replace(true)
+    |> unwrap_and_tag(:distinct)
+    |> ignore(whitespace)
+
+  select_clause =
+    ignore(string("SELECT"))
+    |> ignore(whitespace)
+    |> optional(select_distinct)
+    |> choice([
+      select_star |> tag(:select),
+      repeat(select_item) |> tag(:select)
+    ])
+
+  sparql_query =
+    select_clause
+    |> ignore(optional_whitespace)
+    |> concat(where_clause)
+    |> ignore(optional_whitespace)
+    |> optional(concat(group_by_clause, ignore(optional_whitespace)))
+    |> optional(concat(order_by_clause, ignore(optional_whitespace)))
+    |> optional(concat(limit_clause, ignore(optional_whitespace)))
+    |> optional(concat(offset_clause, ignore(optional_whitespace)))
+    |> eos()
+
+  defparsec(:parse_query, sparql_query)
 
   @doc """
   Parses a SPARQL query string into a structured query representation.
-
-  ## Parameters
-
-  - query: A SPARQL query string
-
-  ## Returns
-
-  - {:ok, query_structure} if parsing is successful
-  - {:error, reason} if parsing fails
   """
   def parse(query) do
+    IO.inspect(query, label: "Raw query input to parser")
     try do
-      # Normalize the query string
       normalized_query = normalize_query(query)
+      Logger.debug("Parsing query: #{normalized_query}")
+      case parse_query(normalized_query) do
+        {:ok, parsed, "", _, _, _} ->
+          IO.inspect(parsed, label: "Parsed before conversion")
+          IO.inspect(parsed, label: "Parsed")
+          query_structure = convert_to_query_structure(parsed)
+          {:ok, query_structure}
 
-      # Determine query type and parse accordingly
-      parse_by_type(normalized_query)
+        {:ok, _, rest, _, _, _} ->
+          Logger.error("Incomplete parse, remaining: #{rest}")
+          {:error, "Failed to parse entire query. Stopped at: #{rest}"}
+
+        {:error, reason, rest, _, _, _} ->
+          Logger.error("Parse error details - reason: #{reason}, at: #{rest}")
+          {:error, "Parse error: #{reason}, at: #{rest}"}
+      end
     rescue
-      e -> {:error, "SPARQL parse error: #{Exception.message(e)}"}
+      e ->
+        Logger.error("Exception in parse: #{Exception.message(e)}")
+        {:error, "SPARQL parse error: #{Exception.message(e)}"}
     end
   end
 
-  # Normalize query by trimming and normalizing whitespace
   defp normalize_query(query) do
     query
     |> String.trim()
     |> String.replace(~r/\s+/, " ")
   end
 
-  # Parse query based on its type (SELECT, CONSTRUCT, etc.)
-  defp parse_by_type(query) do
-    cond do
-      String.match?(query, ~r/^\s*SELECT\s+/i) ->
-        parse_select_query(query)
+  defp convert_to_query_structure(parsed) do
+    {variables, aggregates, has_aggregates} =
+      process_select_items(Keyword.get(parsed, :select, []))
 
-      String.match?(query, ~r/^\s*CONSTRUCT\s+/i) ->
-        {:error, "CONSTRUCT queries are not yet supported"}
+    where_info = Keyword.get(parsed, :where, [{:patterns, []}])
+    patterns_list = Keyword.get(where_info, :patterns, [])
+    {patterns, filters, optionals, unions} = process_where_clause(patterns_list)
 
-      String.match?(query, ~r/^\s*ASK\s+/i) ->
-        {:error, "ASK queries are not yet supported"}
-
-      String.match?(query, ~r/^\s*DESCRIBE\s+/i) ->
-        {:error, "DESCRIBE queries are not yet supported"}
-
-      true ->
-        {:error, "Unsupported query type or invalid SPARQL syntax"}
-    end
+    %{
+      type: :select,
+      variables: Enum.reverse(variables),
+      patterns: patterns,
+      filters: filters,
+      optionals: optionals,
+      unions: unions,
+      has_aggregates: has_aggregates,
+      aggregates: aggregates,
+      group_by: extract_group_by(parsed),
+      order_by: extract_order_by(parsed),
+      limit: extract_limit(parsed),
+      offset: extract_offset(parsed),
+      pattern_filters: []
+    }
   end
 
-  @doc """
-  Parses a SELECT query into its component parts.
-  """
-  def parse_select_query(query) do
-    with {:ok, parts} <- extract_query_parts(query),
-         {:ok, variables} <- parse_variables(parts.variables),
-         {:ok, clauses} <- extract_clauses(parts.where),
-         {:ok, metadata} <- parse_metadata(parts.rest, parts.variables) do
-      # Extract variables_map from clauses
-      variables_map = Map.get(clauses, :variables_map, %{})
+  defp process_select_items(select_items) do
+    Enum.reduce(select_items, {[], [], false}, fn
+      {:variable, var}, {vars, aggs, has_aggs} ->
+        {[var | vars], aggs, has_aggs}
 
-      # Build the query structure
-      query_structure = %{
-        # All existing fields
-        type: :select,
-        variables: variables,
-        patterns: clauses.patterns,
-        filters: clauses.filters,
-        optionals: clauses.optionals,
-        unions: clauses.unions,
-        has_aggregates: metadata.has_aggregates,
-        aggregates: metadata.aggregates,
-        group_by: metadata.group_by,
-        order_by: metadata.order_by,
-        limit: metadata.limit,
-        offset: metadata.offset,
-        pattern_filters: clauses.pattern_filters,
+      {:aggregate, agg_info}, {vars, aggs, _} ->
+        function = Keyword.get(agg_info, :function)
+        var = Keyword.get(agg_info, :variable)
+        distinct = Keyword.get(agg_info, :distinct, false)
 
-        # Add the variable positions
-        variable_positions: variables_map
-      }
+        alias_var =
+          case Keyword.get(agg_info, :alias) do
+            {:variable, alias_name} -> alias_name
+            nil -> "#{String.downcase(function)}_#{var}"
+          end
 
-      {:ok, query_structure}
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
+        agg = %{
+          function: String.downcase(function) |> String.to_atom(),
+          variable: var,
+          distinct: distinct,
+          alias: alias_var
+        }
 
-  # Extract main parts of the SELECT query with balanced brace handling
-  defp extract_query_parts(query) do
-    # Find the start position of "WHERE {"
-    where_start = Regex.run(~r/WHERE\s*\{/i, query, return: :index)
+        {[alias_var | vars], [agg | aggs], true}
 
-    if where_start do
-      [{start_pos, len}] = where_start
-      where_start_pos = start_pos + len
-
-      # Extract variables part
-      variables_part = String.slice(query, 0, start_pos)
-
-      variables =
-        String.trim(variables_part)
-        |> String.replace("SELECT ", "")
-        |> String.trim()
-
-      # Get the rest of the query after WHERE {
-      rest_of_query = String.slice(query, where_start_pos, String.length(query) - where_start_pos)
-
-      # Extract content between balanced braces
-      {where_clause, remaining} = extract_between_braces(rest_of_query)
-
-      Logger.debug("WHERE clause: #{where_clause}")
-
-      {:ok, %{variables: variables, where: where_clause, rest: remaining}}
-    else
-      {:error, "Invalid SELECT query format: Cannot find WHERE clause"}
-    end
-  end
-
-  # Extract content between balanced braces
-  defp extract_between_braces(str) do
-    # Helper function to extract content between balanced braces
-    extract_balanced(str, 1, "", "")
-  end
-
-  defp extract_balanced("", _, acc, rest), do: {acc, rest}
-
-  defp extract_balanced(<<"{", rest::binary>>, depth, acc, remaining) do
-    extract_balanced(rest, depth + 1, acc <> "{", remaining)
-  end
-
-  defp extract_balanced(<<"}", rest::binary>>, 1, acc, _) do
-    # Found the matching closing brace at the right depth
-    {acc, rest}
-  end
-
-  defp extract_balanced(<<"}", rest::binary>>, depth, acc, remaining) do
-    extract_balanced(rest, depth - 1, acc <> "}", remaining)
-  end
-
-  defp extract_balanced(<<char::utf8, rest::binary>>, depth, acc, remaining) do
-    extract_balanced(rest, depth, acc <> <<char::utf8>>, remaining)
-  end
-
-  # Extract all clauses from the WHERE part
-  defp extract_clauses(where_str) do
-    # Current implementation with variable positions added
-    all_filters = extract_filters(where_str)
-    optionals = extract_optionals(where_str)
-    unions = extract_unions(where_str)
-
-    clean_str =
-      where_str
-      |> String.replace(~r/OPTIONAL\s*\{[^{}]+\}/i, "")
-      |> String.replace(
-        ~r/\{\s*[^{}]*(?:\{[^{}]*\}[^{}]*)*\s*\}\s+UNION\s+\{\s*[^{}]*(?:\{[^{}]*\}[^{}]*)*\s*\}/i,
-        ""
-      )
-      |> String.replace(~r/FILTER\s*\(\s*[^()]*(?:\([^()]*\)[^()]*)*\s*\)/i, "")
-
-    Logger.debug("Clean string for basic patterns: #{clean_str}")
-
-    # Replace this line with the new version that tracks variable positions
-    {patterns, variables_map} =
-      extract_triple_patterns_with_positions(clean_str, optionals, unions, all_filters)
-
-    pattern_filters = attach_filters_to_patterns(patterns, all_filters)
-
-    {:ok,
-     %{
-       optionals: optionals,
-       unions: unions,
-       filters: all_filters,
-       patterns: patterns,
-       pattern_filters: pattern_filters,
-       variables_map: variables_map
-     }}
-  end
-
-  # Helper to attach filters to patterns
-  defp attach_filters_to_patterns(patterns, filters) do
-    # Simple approach: attach all filters to the first pattern
-    if Enum.empty?(patterns) do
-      []
-    else
-      first_pattern = hd(patterns)
-      rest_patterns = tl(patterns)
-
-      [%{pattern: first_pattern, filters: filters}] ++
-        Enum.map(rest_patterns, fn pattern -> %{pattern: pattern, filters: []} end)
-    end
-  end
-
-  # Implement the function to extract patterns with positions
-  defp extract_triple_patterns_with_positions(str, _optionals, _unions, _filters) do
-    # Initialize an empty variables map
-    variables_map = %{}
-
-    # Split the string by period, but keep track of the original positions
-    pattern_strings_with_positions =
-      str
-      |> String.split(".")
-      |> Enum.map(&String.trim/1)
-      |> Enum.filter(&(String.length(&1) > 0))
-      |> Enum.with_index()
-
-    # Process each pattern and accumulate variable positions
-    {patterns_with_positions, final_variables_map} =
-      Enum.reduce(pattern_strings_with_positions, {[], variables_map}, fn {pattern_str, pos},
-                                                                          {acc, vars_map} ->
-        {pattern, updated_vars_map} = parse_triple(pattern_str, vars_map)
-
-        if pattern != nil do
-          {[{pattern, pos} | acc], updated_vars_map}
-        else
-          {acc, vars_map}
-        end
-      end)
-
-    # Sort patterns by original position
-    patterns =
-      patterns_with_positions
-      |> Enum.sort_by(fn {_, pos} -> pos end)
-      |> Enum.map(fn {pattern, _} -> pattern end)
-
-    {patterns, final_variables_map}
-  end
-
-  # Parse metadata like GROUP BY, ORDER BY, LIMIT, OFFSET
-  defp parse_metadata(rest_str, variables_str) do
-    has_aggregates = Regex.match?(~r/(COUNT|SUM|AVG|MIN|MAX|GROUP_CONCAT)\s*\(/i, variables_str)
-
-    aggregates = if has_aggregates, do: parse_aggregates(variables_str), else: []
-    group_by = parse_group_by(rest_str)
-    order_by = parse_order_by(rest_str)
-    {limit, offset} = parse_limit_offset(rest_str)
-
-    {:ok,
-     %{
-       has_aggregates: has_aggregates,
-       aggregates: aggregates,
-       group_by: group_by,
-       order_by: order_by,
-       limit: limit,
-       offset: offset
-     }}
-  end
-
-  # Build the final query structure with all required keys
-  # defp build_query_structure(variables, clauses, metadata, variables_map) do
-  #   %{
-  #     type: :select,
-  #     variables: variables,
-  #     patterns: clauses.patterns,
-  #     filters: clauses.filters,
-  #     optionals: clauses.optionals,
-  #     unions: clauses.unions,
-  #     has_aggregates: metadata.has_aggregates,
-  #     aggregates: metadata.aggregates,
-  #     group_by: metadata.group_by,
-  #     order_by: metadata.order_by,
-  #     limit: metadata.limit,
-  #     offset: metadata.offset,
-  #     pattern_filters: clauses.pattern_filters,
-  #     # Add this field
-  #     variable_positions: variables_map
-  #   }
-  # end
-
-  # Extract OPTIONAL clauses
-  defp extract_optionals(where_str) do
-    # Pattern to match OPTIONAL clauses
-    optional_pattern = ~r/OPTIONAL\s*\{([^{}]+)\}/i
-
-    Regex.scan(optional_pattern, where_str, capture: :all_but_first)
-    |> List.flatten()
-    |> Enum.map(fn inner_content ->
-      # This line now needs to handle the tuple return value
-      {patterns, _} = extract_triple_patterns_with_positions(inner_content, [], [], [])
-      optional_filters = extract_filters(inner_content)
-
-      %{patterns: patterns, filters: optional_filters}
+      _, acc ->
+        acc
     end)
   end
 
-  # Extract UNION clauses
-  defp extract_unions(where_str) do
-    # Pattern to match UNION clauses
-    union_pattern = ~r/\{\s*([^{}]*(?:\{[^{}]*\}[^{}]*)*)\s*\}\s+UNION\s+\{\s*([^{}]*(?:\{[^{}]*\}[^{}]*)*)\s*\}/i
+  defp process_where_clause(where_items) do
+    Enum.reduce(where_items, {[], [], [], []}, fn
+      {:triple, [subj, pred, obj]}, {patterns, filters, optionals, unions} ->
+        pattern = %{s: process_node(subj), p: process_node(pred), o: process_node(obj)}
+        {[pattern | patterns], filters, optionals, unions}
 
-    Regex.scan(union_pattern, where_str, capture: :all_but_first)
-    |> Enum.map(fn [left_content, right_content] ->
-      # These lines now need to handle the tuple return values
-      {left_patterns, _} = extract_triple_patterns_with_positions(left_content, [], [], [])
-      {right_patterns, _} = extract_triple_patterns_with_positions(right_content, [], [], [])
+      {:filter, [expr]}, {patterns, filters, optionals, unions} ->
+        filter = process_filter(expr)
+        {patterns, [filter | filters], optionals, unions}
 
-      # Also extract any filters in each UNION branch
-      left_filters = extract_filters(left_content)
-      right_filters = extract_filters(right_content)
+      {:optional, opt_info}, {patterns, filters, optionals, unions} ->
+        opt_patterns = opt_info[:patterns] || []
+        {opt_patterns_list, opt_filters, nested_optionals, _} = process_where_clause(opt_patterns)
 
-      %{
-        left: %{patterns: left_patterns, filters: left_filters},
-        right: %{patterns: right_patterns, filters: right_filters}
-      }
+        optional = %{
+          patterns: opt_patterns_list,
+          filters: opt_filters,
+          optionals: nested_optionals
+        }
+
+        {patterns, filters, [optional | optionals], unions}
+
+      {:union, [{:patterns, left_patterns}, {:patterns, right_patterns}]},
+      {patterns, filters, optionals, unions} ->
+        {left_pats, left_fils, left_opts, _} = process_where_clause(left_patterns)
+        {right_pats, right_fils, right_opts, _} = process_where_clause(right_patterns)
+
+        union = %{
+          left: %{patterns: left_pats, filters: left_fils, optionals: left_opts},
+          right: %{patterns: right_pats, filters: right_fils, optionals: right_opts}
+        }
+
+        {patterns, filters, optionals, [union | unions]}
+
+      _, acc ->
+        acc
+    end)
+    |> then(fn {patterns, filters, optionals, unions} ->
+      {Enum.reverse(patterns), Enum.reverse(filters), Enum.reverse(optionals),
+       Enum.reverse(unions)}
     end)
   end
 
-  # Extract FILTER clauses
-  defp extract_filters(str) do
-    # Pattern to match FILTER expressions
-    filter_pattern = ~r/FILTER\s*\(\s*([^()]*(?:\([^()]*\)[^()]*)*)\s*\)/i
+  defp process_node({:variable, _var}), do: nil
 
-    Regex.scan(filter_pattern, str, capture: :all_but_first)
-    |> List.flatten()
-    |> Enum.map(&parse_filter_expression/1)
-  end
-
-  # Parse a filter expression into a structured filter
-  defp parse_filter_expression(expr) do
-    cond do
-      # Handle equality filter
-      String.contains?(expr, "=") && !String.contains?(expr, "!=") ->
-        [var, value] = String.split(expr, "=", parts: 2)
-        var = String.trim(var)
-        value = String.trim(value)
-
-        %{
-          type: :equality,
-          variable: extract_var_name(var),
-          value: extract_value(value),
-          # Store original expression for reconstruction
-          expression: expr
-        }
-
-      # Handle inequality filter
-      String.contains?(expr, "!=") ->
-        [var, value] = String.split(expr, "!=", parts: 2)
-        var = String.trim(var)
-        value = String.trim(value)
-
-        %{
-          type: :inequality,
-          variable: extract_var_name(var),
-          value: extract_value(value),
-          # Store original expression for reconstruction
-          expression: expr
-        }
-
-      # Handle regex filter
-      String.match?(expr, ~r/regex\s*\(/i) ->
-        # Extract variable and pattern from regex
-        regex_pattern = ~r/regex\s*\(\s*\?([^\s,\)]+)\s*,\s*["']([^"']+)["']\s*\)/i
-        captures = Regex.named_captures(regex_pattern, expr)
-
-        if captures do
-          %{
-            type: :regex,
-            variable: captures["1"],
-            pattern: captures["2"],
-            # Store original expression for reconstruction
-            expression: expr
-          }
-        else
-          %{type: :unknown, expression: expr}
-        end
-
-      # Unknown filter type
-      true ->
-        %{type: :unknown, expression: expr}
+  defp process_node({:literal_with_meta, [{:literal, value} | rest]}) do
+    case rest do
+      [{:lang, lang}] -> "#{value}@#{lang}"
+      [{:datatype, dt}] -> "#{value}^^#{process_datatype(dt)}"
+      [] -> value
+      _ -> nil
     end
   end
 
-  # Extract variable name from ?var format
-  defp extract_var_name(var_str) do
-    if String.starts_with?(var_str, "?") do
-      String.slice(var_str, 1, String.length(var_str) - 1)
-    else
-      var_str
-    end
-  end
+  defp process_node({:iri, iri}), do: iri
+  defp process_node({:prov, prov}), do: prov
+  defp process_node(_), do: nil
 
-  # Extract value (remove quotes if present)
-  defp extract_value(value_str) do
-    cond do
-      String.starts_with?(value_str, "\"") && String.ends_with?(value_str, "\"") ->
-        String.slice(value_str, 1, String.length(value_str) - 2)
+  defp process_datatype({:iri, iri}), do: iri
+  defp process_datatype({:prov, prov}), do: prov
+  defp process_datatype(_), do: nil
 
-      String.starts_with?(value_str, "'") && String.ends_with?(value_str, "'") ->
-        String.slice(value_str, 1, String.length(value_str) - 2)
-
-      true ->
-        value_str
-    end
-  end
-
-  # Extract basic triple patterns considering complex structures
-  # defp extract_basic_patterns(where_str, optionals, unions, filters) do
-  #   # Clean string by removing complex structures
-  #   clean_str = remove_complex_structures(where_str, optionals, unions, filters)
-  #   Logger.debug("Clean string for basic patterns: #{clean_str}")
-  #   extract_triple_patterns(clean_str, optionals, unions, filters)
-  # end
-
-  # Extract triple patterns from a string - IMPORTANT: REVERSE the patterns
-  # defp extract_triple_patterns(str, _optionals, _unions, _filters) do
-  #   # Initialize an empty variables map
-  #   variables_map = %{}
-
-  #   # Split the string by period, but keep track of the original positions
-  #   pattern_strings_with_positions =
-  #     str
-  #     |> String.split(".")
-  #     |> Enum.map(&String.trim/1)
-  #     |> Enum.filter(&(String.length(&1) > 0))
-  #     |> Enum.with_index()
-
-  #   # Parse each pattern with its position
-  #   {patterns_with_positions, variables_map} =
-  #     Enum.reduce(pattern_strings_with_positions, {[], variables_map}, fn {pattern_str, pos},
-  #                                                                         {acc, vars_map} ->
-  #       {pattern, updated_vars_map} = parse_triple(pattern_str, vars_map)
-  #       {[{pattern, pos} | acc], updated_vars_map}
-  #     end)
-
-  #   # Sort patterns by original position
-  #   patterns =
-  #     patterns_with_positions
-  #     |> Enum.filter(fn {pattern, _} -> pattern != nil end)
-  #     |> Enum.sort_by(fn {_, pos} -> pos end)
-  #     |> Enum.map(fn {pattern, _} -> pattern end)
-
-  #   {patterns, variables_map}
-  # end
-
-  # Parse a triple string into a pattern structure
-  defp parse_triple(triple, variables_map) do
-    parts = String.split(triple, ~r/\s+/)
-
-    if length(parts) >= 3 do
-      s_part = Enum.at(parts, 0)
-      p_part = Enum.at(parts, 1)
-      o_part = Enum.at(parts, 2)
-
-      # Track variable positions
-      variables_map = update_variable_positions(s_part, "s", variables_map)
-      variables_map = update_variable_positions(p_part, "p", variables_map)
-      variables_map = update_variable_positions(o_part, "o", variables_map)
-
-      pattern = %{
-        s: parse_component(s_part),
-        p: parse_component(p_part),
-        o: parse_component(o_part)
-      }
-
-      # Return the pattern and updated variables map
-      {pattern, variables_map}
-    else
-      {nil, variables_map}
-    end
-  end
-
-  defp update_variable_positions(part, position, variables_map) do
-    if String.starts_with?(part, "?") do
-      # Note the //1 syntax for Elixir 1.18
-      var_name = String.slice(part, 1..-1//1)
-      Map.put(variables_map, var_name, position)
-    else
-      variables_map
-    end
-  end
-
-  # Remove complex structures considering the already extracted parts
-  # defp clean_string_for_patterns(str, optionals, unions, filters) do
-  #   # Remove OPTIONAL blocks
-  #   str_without_optionals = Enum.reduce(optionals, str, fn _, acc ->
-  #     String.replace(acc, ~r/OPTIONAL\s*\{[^{}]+\}/i, "")
-  #   end)
-
-  #   # Remove UNION blocks
-  #   str_without_unions = Enum.reduce(unions, str_without_optionals, fn _, acc ->
-  #     String.replace(acc, ~r/\{\s*[^{}]*(?:\{[^{}]*\}[^{}]*)*\s*\}\s+UNION\s+\{\s*[^{}]*(?:\{[^{}]*\}[^{}]*)*\s*\}/i, "")
-  #   end)
-
-  #   # Remove FILTER expressions
-  #   Enum.reduce(filters, str_without_unions, fn _, acc ->
-  #     String.replace(acc, ~r/FILTER\s*\(\s*[^()]*(?:\([^()]*\)[^()]*)*\s*\)/i, "")
-  #   end)
-  # end
-
-  # Parse a triple pattern component (subject, predicate, or object)
-  defp parse_component(component) do
-    cond do
-      # For variable, tests expect nil
-      String.starts_with?(component, "?") ->
-        nil
-
-      # For quoted literals, remove the quotes
-      String.starts_with?(component, "\"") && String.ends_with?(component, "\"") ->
-        String.slice(component, 1, String.length(component) - 2)
-
-      String.starts_with?(component, "'") && String.ends_with?(component, "'") ->
-        String.slice(component, 1, String.length(component) - 2)
-
-      # Everything else, just return as-is
-      true ->
-        component
-    end
-  end
-
-  # Parse variables from SELECT clause
-  defp parse_variables(vars_str) do
-    # Extract aggregate aliases
-    aggregate_aliases =
-      Regex.scan(~r/\([^)]+\s+AS\s+\?([^\s\)]+)\)/i, vars_str, capture: :all_but_first)
-      |> List.flatten()
-
-    # Extract standalone variables
-    standalone_vars =
-      Regex.scan(~r/\s\?([^\s\(\)]+)/i, " " <> vars_str, capture: :all_but_first)
-      |> List.flatten()
-      |> Enum.filter(fn var ->
-        # Filter out variables that might be part of expressions
-        !String.contains?(vars_str, "(#{var})")
-      end)
-
-    # Combine all variables (removing duplicates)
-    variables = (aggregate_aliases ++ standalone_vars) |> Enum.uniq()
-
-    {:ok, variables}
-  end
-
-  # Parse aggregation expressions with better alias handling
-  def parse_aggregates(vars_str) do
-    # Look for full expressions like (COUNT(?x) AS ?y)
-    full_pattern = ~r/\((\w+)\(\??([^\)]+)\)(?:\s+AS\s+\?([^\s\)]+))?\)/i
-
-    Regex.scan(full_pattern, vars_str)
-    |> Enum.map(fn match ->
-      case match do
-        [_, function, variable, ""] ->
-          # No alias specified, use default
-          %{
-            function: String.downcase(function) |> String.to_atom(),
-            variable: variable,
-            distinct: false,
-            alias: "#{String.downcase(function)}_#{variable}"
-          }
-
-        [_, function, variable, alias_name] when alias_name != "" ->
-          # With explicit alias
-          %{
-            function: String.downcase(function) |> String.to_atom(),
-            variable: variable,
-            distinct: false,
-            alias: alias_name
-          }
-
-        [_, function, variable | _] ->
-          # Default case
-          %{
-            function: String.downcase(function) |> String.to_atom(),
-            variable: variable,
-            distinct: false,
-            alias: "#{String.downcase(function)}_#{variable}"
-          }
+  defp process_filter({:filter_expression, [left, {:operator, op}, right]}) do
+    filter_type =
+      case op do
+        "=" -> :equality
+        "!=" -> :inequality
+        ">" -> :greater_than
+        "<" -> :less_than
+        ">=" -> :greater_than_equal
+        "<=" -> :less_than_equal
+        _ -> :unknown
       end
-    end)
+
+    %{
+      type: filter_type,
+      variable: extract_variable(left),
+      value: extract_value(right),
+      expression: "#{format_for_expression(left)} #{op} #{format_for_expression(right)}"
+    }
   end
 
-  # Parse GROUP BY clause
-  def parse_group_by(query_part) do
-    pattern = ~r/GROUP\s+BY\s+(?<vars>[^;)]+?)(\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/i
+  defp format_for_expression({:variable, var}), do: "?#{var}"
+  defp format_for_expression({:literal_with_meta, [{:literal, val} | _]}), do: "\"#{val}\""
+  defp format_for_expression(other), do: inspect(other)
 
-    case Regex.named_captures(pattern, query_part) do
-      %{"vars" => vars} ->
-        vars
-        |> String.split(",")
-        |> Enum.map(&String.trim/1)
-        |> Enum.map(fn var ->
-          var = String.trim(var)
+  defp extract_variable({:variable, var}), do: var
+  defp extract_variable(_), do: nil
 
-          if String.starts_with?(var, "?"),
-            do: String.slice(var, 1, String.length(var) - 1),
-            else: var
-        end)
+  defp extract_value({:literal_with_meta, [{:literal, val} | _]}), do: val
+  defp extract_value({:variable, var}), do: var
+  defp extract_value(_), do: nil
 
+  defp extract_group_by(parsed) do
+    case Keyword.get(parsed, :group_by) do
+      nil -> []
+      group_by -> Enum.map(group_by, fn {:variable, var} -> var end)
+    end
+  end
+
+  defp extract_order_by(parsed) do
+    case Keyword.get(parsed, :order_by) do
       nil ->
         []
-    end
-  end
 
-  # Parse ORDER BY clause
-  def parse_order_by(query_part) do
-    pattern = ~r/ORDER\s+BY\s+(?<ordering>[^;)]+?)(\s+LIMIT|\s+OFFSET|$)/i
+      order_by ->
+        Enum.map(order_by, fn
+          {:order_with_dir, [{:direction, dir}, {:variable, var}]} ->
+            %{variable: var, direction: dir}
 
-    case Regex.named_captures(pattern, query_part) do
-      %{"ordering" => ordering} ->
-        ordering
-        |> String.split(",")
-        |> Enum.map(&String.trim/1)
-        |> Enum.map(fn item ->
-          cond do
-            String.starts_with?(item, "DESC(") ->
-              var = Regex.run(~r/DESC\(\s*\?([^\s\)]+)\s*\)/i, item)
+          {:order_no_dir, [map]} ->
+            map
 
-              if var && length(var) > 1,
-                do: %{variable: Enum.at(var, 1), direction: :desc},
-                else: nil
-
-            String.starts_with?(item, "ASC(") ->
-              var = Regex.run(~r/ASC\(\s*\?([^\s\)]+)\s*\)/i, item)
-
-              if var && length(var) > 1,
-                do: %{variable: Enum.at(var, 1), direction: :asc},
-                else: nil
-
-            String.starts_with?(item, "?") ->
-              %{variable: String.slice(item, 1, String.length(item) - 1), direction: :asc}
-
-            true ->
-              nil
-          end
+          _ ->
+            nil
         end)
         |> Enum.filter(&(&1 != nil))
-
-      nil ->
-        []
     end
   end
 
-  # Parse LIMIT and OFFSET clauses
-  def parse_limit_offset(query_part) do
-    # Extract LIMIT
-    limit_pattern = ~r/LIMIT\s+(?<limit>\d+)/i
+  defp extract_limit(parsed) do
+    case Keyword.get(parsed, :limit) do
+      [{:value, value}] -> value
+      _ -> nil
+    end
+  end
 
-    limit =
-      case Regex.named_captures(limit_pattern, query_part) do
-        %{"limit" => limit_str} -> String.to_integer(limit_str)
-        nil -> nil
-      end
-
-    # Extract OFFSET
-    offset_pattern = ~r/OFFSET\s+(?<offset>\d+)/i
-
-    offset =
-      case Regex.named_captures(offset_pattern, query_part) do
-        %{"offset" => offset_str} -> String.to_integer(offset_str)
-        nil -> nil
-      end
-
-    {limit, offset}
+  defp extract_offset(parsed) do
+    case Keyword.get(parsed, :offset) do
+      [{:value, value}] -> value
+      _ -> nil
+    end
   end
 end

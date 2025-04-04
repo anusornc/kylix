@@ -1,0 +1,48 @@
+@startuml KylixQueryFullArchitecture
+!theme plain
+
+package "Query Components" {
+    [SparqlEngine] #LightPink
+    [SparqlParser] #LightBlue
+    [SparqlExecutor] #LightGreen
+    [SparqlOptimizer] #LightYellow
+    [SparqlAggregator] #LightCyan
+    [VariableMapper] #LightGray
+}
+
+package "Storage" {
+    [StorageCoordinator] #LightYellow
+    [DAGEngine] #LightGreen
+    [PersistentDAGEngine] #LightBlue
+}
+
+package "Blockchain" {
+    [BlockchainServer] #LightBlue
+}
+
+' Interaction Flows
+SparqlEngine --> SparqlParser : parse query
+SparqlEngine --> SparqlExecutor : execute query
+
+SparqlExecutor --> SparqlOptimizer : optimize query
+SparqlExecutor --> SparqlAggregator : apply aggregations
+SparqlExecutor --> VariableMapper : map variables
+
+SparqlExecutor --> StorageCoordinator : query data
+StorageCoordinator --> DAGEngine : query in-memory
+StorageCoordinator --> PersistentDAGEngine : query persistent storage
+
+SparqlEngine --> BlockchainServer : access state
+
+' Component Responsibilities
+note right of StorageCoordinator
+  Manages data flow between
+  in-memory and persistent storage
+end note
+
+note right of SparqlExecutor
+  Coordinates query execution
+  across storage engines
+end note
+
+@enduml

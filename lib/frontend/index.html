@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuthFlow - Login & Signup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .auth-container {
+            perspective: 1000px;
+        }
+        
+        .auth-card {
+            transform-style: preserve-3d;
+            transition: transform 0.8s;
+        }
+        
+        .auth-card.flipped {
+            transform: rotateY(180deg);
+        }
+        
+        .auth-front, .auth-back {
+            backface-visibility: hidden;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .auth-back {
+            transform: rotateY(180deg);
+        }
+        
+        .input-field:focus + label, 
+        .input-field:valid + label {
+            transform: translateY(-24px) scale(0.8);
+            color: #667eea;
+        }
+        
+        .social-btn {
+            transition: all 0.3s;
+        }
+        
+        .social-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .password-toggle {
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+    <div class="auth-container w-full max-w-md">
+        <div class="auth-card relative w-full h-[520px]">
+            <!-- Login Form (Front) -->
+            <div class="auth-front bg-white rounded-2xl shadow-2xl p-8 flex flex-col">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-gray-800">Welcome Back</h2>
+                    <p class="text-gray-600">Login to access your account</p>
+                </div>
+                
+                <form id="loginForm" class="flex-1 flex flex-col">
+                    <div class="relative mb-6">
+                        <input type="email" id="loginEmail" class="input-field w-full px-4 py-2 border-b-2 border-gray-300 focus:border-blue-500 outline-none transition" required>
+                        <label for="loginEmail" class="absolute left-4 top-2 text-gray-500 transition">Email Address</label>
+                    </div>
+                    
+                    <div class="relative mb-6">
+                        <input type="password" id="loginPassword" class="input-field w-full px-4 py-2 border-b-2 border-gray-300 focus:border-blue-500 outline-none transition pr-10" required>
+                        <label for="loginPassword" class="absolute left-4 top-2 text-gray-500 transition">Password</label>
+                        <span class="password-toggle absolute text-gray-400 hover:text-gray-600">
+                            <i class="far fa-eye" id="toggleLoginPassword"></i>
+                        </span>
+                    </div>
+                    
+                    <div class="flex justify-between items-center mb-6">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="rememberMe" class="mr-2">
+                            <label for="rememberMe" class="text-sm text-gray-600">Remember me</label>
+                        </div>
+                        <a href="#" class="text-sm text-blue-500 hover:underline">Forgot password?</a>
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-lg font-medium hover:opacity-90 transition mb-6">
+                        Login
+                    </button>
+                    
+                    <div class="text-center text-sm text-gray-600 mb-6">
+                        Or continue with
+                    </div>
+                    
+                    <div class="flex justify-center gap-4 mb-6">
+                        <button type="button" class="social-btn w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-50">
+                            <i class="fab fa-google text-red-500"></i>
+                        </button>
+                        <button type="button" class="social-btn w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-50">
+                            <i class="fab fa-facebook-f text-blue-600"></i>
+                        </button>
+                        <button type="button" class="social-btn w-12 h-12 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-50">
+                            <i class="fab fa-apple text-gray-800"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="text-center text-sm text-gray-600 mt-auto">
+                        Don't have an account? 
+                        <button type="button" id="showSignup" class="text-blue-500 font-medium hover:underline">Sign up</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Signup Form (Back) -->
+            <div class="auth-back bg-white rounded-2xl shadow-2xl p-8 flex flex-col">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-gray-800">Create Account</h2>
+                    <p class="text-gray-600">Join us today!</p>
+                </div>
+                
+                <form id="signupForm" class="flex-1 flex flex-col">
+                    <div class="relative mb-4">
+                        <input type="text" id="signupName" class="input-field w-full px-4 py-2 border-b-2 border-gray-300 focus:border-blue-500 outline-none transition" required>
+                        <label for="signupName" class="absolute left-4 top-2 text-gray-500 transition">Full Name</label>
+                    </div>
+                    
+                    <div class="relative mb-4">
+                        <input type="email" id="signupEmail" class="input-field w-full px-4 py-2 border-b-2 border-gray-300 focus:border-blue-500 outline-none transition" required>
+                        <label for="signupEmail" class="absolute left-4 top-2 text-gray-500 transition">Email Address</label>
+                    </div>
+                    
+                    <div class="relative mb-4">
+                        <input type="password" id="signupPassword" class="input-field w-full px-4 py-2 border-b-2 border-gray-300 focus:border-blue-500 outline-none transition pr-10" required>
+                        <label for="signupPassword" class="absolute left-4 top-2 text-gray-500 transition">Password</label>
+                        <span class="password-toggle absolute text-gray-400 hover:text-gray-600">
+                            <i class="far fa-eye" id="toggleSignupPassword"></i>
+                        </span>
+                    </div>
+                    
+                    <div class="relative mb-6">
+                        <input type="password" id="signupConfirmPassword" class="input-field w-full px-4 py-2 border-b-2 border-gray-300 focus:border-blue-500 outline-none transition pr-10" required>
+                        <label for="signupConfirmPassword" class="absolute left-4 top-2 text-gray-500 transition">Confirm Password</label>
+                        <span class="password-toggle absolute text-gray-400 hover:text-gray-600">
+                            <i class="far fa-eye" id="toggleSignupConfirmPassword"></i>
+                        </span>
+                    </div>
+                    
+                    <div class="mb-6">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="agreeTerms" class="mr-2" required>
+                            <label for="agreeTerms" class="text-sm text-gray-600">
+                                I agree to the <a href="#" class="text-blue-500 hover:underline">Terms of Service</a> and <a href="#" class="text-blue-500 hover:underline">Privacy Policy</a>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-lg font-medium hover:opacity-90 transition mb-6">
+                        Sign Up
+                    </button>
+                    
+                    <div class="text-center text-sm text-gray-600 mt-auto">
+                        Already have an account? 
+                        <button type="button" id="showLogin" class="text-blue-500 font-medium hover:underline">Login</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Toggle between login and signup forms
+            const showSignupBtn = document.getElementById('showSignup');
+            const showLoginBtn = document.getElementById('showLogin');
+            const authCard = document.querySelector('.auth-card');
+            
+            showSignupBtn.addEventListener('click', function() {
+                authCard.classList.add('flipped');
+            });
+            
+            showLoginBtn.addEventListener('click', function() {
+                authCard.classList.remove('flipped');
+            });
+            
+            // Password toggle functionality
+            function setupPasswordToggle(inputId, toggleId) {
+                const passwordInput = document.getElementById(inputId);
+                const toggleBtn = document.getElementById(toggleId);
+                
+                toggleBtn.addEventListener('click', function() {
+                    if (passwordInput.type === 'password') {
+                        passwordInput.type = 'text';
+                        toggleBtn.classList.replace('fa-eye', 'fa-eye-slash');
+                    } else {
+                        passwordInput.type = 'password';
+                        toggleBtn.classList.replace('fa-eye-slash', 'fa-eye');
+                    }
+                });
+            }
+            
+            setupPasswordToggle('loginPassword', 'toggleLoginPassword');
+            setupPasswordToggle('signupPassword', 'toggleSignupPassword');
+            setupPasswordToggle('signupConfirmPassword', 'toggleSignupConfirmPassword');
+            
+            // Form validation and submission
+            const loginForm = document.getElementById('loginForm');
+            const signupForm = document.getElementById('signupForm');
+            
+            loginForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const email = document.getElementById('loginEmail').value;
+                const password = document.getElementById('loginPassword').value;
+                
+                // Simple validation
+                if (!email || !password) {
+                    alert('Please fill in all fields');
+                    return;
+                }
+                
+                // Here you would typically send data to server
+                console.log('Login submitted:', { email, password });
+                alert('Login successful! (Demo)');
+            });
+            
+            signupForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const name = document.getElementById('signupName').value;
+                const email = document.getElementById('signupEmail').value;
+                const password = document.getElementById('signupPassword').value;
+                const confirmPassword = document.getElementById('signupConfirmPassword').value;
+                const agreeTerms = document.getElementById('agreeTerms').checked;
+                
+                // Validation
+                if (!name || !email || !password || !confirmPassword) {
+                    alert('Please fill in all fields');
+                    return;
+                }
+                
+                if (password !== confirmPassword) {
+                    alert('Passwords do not match');
+                    return;
+                }
+                
+                if (!agreeTerms) {
+                    alert('You must agree to the terms and conditions');
+                    return;
+                }
+                
+                // Here you would typically send data to server
+                console.log('Signup submitted:', { name, email, password });
+                alert('Account created successfully! (Demo)');
+                
+                // Switch back to login form
+                authCard.classList.remove('flipped');
+            });
+            
+            // Floating label effect
+            const inputFields = document.querySelectorAll('.input-field');
+            inputFields.forEach(input => {
+                // Check if field has value on page load
+                if (input.value) {
+                    input.nextElementSibling.classList.add('transform', '-translate-y-6', 'scale-80', 'text-blue-500');
+                }
+                
+                input.addEventListener('focus', function() {
+                    this.nextElementSibling.classList.add('transform', '-translate-y-6', 'scale-80', 'text-blue-500');
+                });
+                
+                input.addEventListener('blur', function() {
+                    if (!this.value) {
+                        this.nextElementSibling.classList.remove('transform', '-translate-y-6', 'scale-80', 'text-blue-500');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

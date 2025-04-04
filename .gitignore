@@ -62,5 +62,12 @@ erl_crash.dump
 # Crash reports
 crash_dump.*
 
+<<<<<<< HEAD
 .DS_Store
 CLAUDE.md
+=======
+# Temporary files
+CLAUDE.md
+lib/.DS_Store
+.DS_Store
+>>>>>>> core/sparql-parser-upgrade

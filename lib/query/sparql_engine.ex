@@ -4,12 +4,126 @@ defmodule Kylix.Query.SparqlEngine do
 
   This module integrates the SPARQL parser and executor to provide
   a complete SPARQL query solution for the Kylix blockchain.
+  Enhanced with NimbleParsec for robust query preprocessing and validation.
   """
+
+  import NimbleParsec
+  require Logger
 
   alias Kylix.Query.SparqlParser
   alias Kylix.Query.SparqlExecutor
   alias Kylix.Query.SparqlOptimizer
-  require Logger
+
+  # --- NimbleParsec Parser Definitions ---
+
+  # Whitespace handling
+  whitespace = ascii_string([?\s, ?\n, ?\r, ?\t], min: 1)
+  optional_whitespace = ascii_string([?\s, ?\n, ?\r, ?\t], min: 0)
+
+  # Comment parser (single-line and multi-line)
+  single_line_comment =
+    string("#")
+    |> repeat(ascii_char([not: ?\n]))
+    |> optional(string("\n"))
+    |> replace(:comment)
+
+  multi_line_comment =
+    string("/*")
+    |> repeat(lookahead_not(string("*/")) |> ascii_char([]))
+    |> string("*/")
+    |> replace(:comment)
+
+  any_comment = choice([single_line_comment, multi_line_comment])
+
+  # PREFIX declaration parser
+  prefix_name =
+    optional(ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1))
+    |> string(":")
+    |> reduce({Enum, :join, [""]})
+
+  prefix_uri =
+    ignore(string("<"))
+    |> ascii_string([not: ?>], min: 1)
+    |> ignore(string(">"))
+
+  prefix_decl =
+    ignore(optional_whitespace)
+    |> ignore(string("PREFIX"))
+    |> ignore(whitespace)
+    |> concat(prefix_name)
+    |> ignore(whitespace)
+    |> concat(prefix_uri)
+    |> ignore(optional_whitespace)
+    |> tag(:prefix)
+
+  # BASE declaration parser
+  base_decl =
+    ignore(optional_whitespace)
+    |> ignore(string("BASE"))
+    |> ignore(whitespace)
+    |> ignore(string("<"))
+    |> ascii_string([not: ?>], min: 1)
+    |> ignore(string(">"))
+    |> ignore(optional_whitespace)
+    |> tag(:base)
+
+  # Main SPARQL query components
+  select_keyword =
+    ignore(optional_whitespace)
+    |> string("SELECT")
+    |> replace(:select)
+
+  construct_keyword =
+    ignore(optional_whitespace)
+    |> string("CONSTRUCT")
+    |> replace(:construct)
+
+  describe_keyword =
+    ignore(optional_whitespace)
+    |> string("DESCRIBE")
+    |> replace(:describe)
+
+  ask_keyword =
+    ignore(optional_whitespace)
+    |> string("ASK")
+    |> replace(:ask)
+
+  query_type = choice([select_keyword, construct_keyword, describe_keyword, ask_keyword])
+
+  # Simple validator for query structure
+  query_structure_validator =
+    optional(repeat(choice([prefix_decl, base_decl, any_comment, whitespace |> ignore()])))
+    |> concat(query_type)
+    |> repeat(
+      choice([
+        any_comment |> ignore(),
+        whitespace |> ignore(),
+        ascii_char([]) |> utf8_string([], min: 1)
+      ])
+    )
+
+  defparsec(:parse_query_structure, query_structure_validator)
+
+  # Query preprocessor to normalize and extract metadata
+  query_preprocessor =
+    repeat(
+      choice([
+        # Capture prefixes
+        prefix_decl,
+        # Capture base URI
+        base_decl,
+        # Ignore comments
+        any_comment |> ignore(),
+        # Normalize whitespace sequences to a single space
+        whitespace |> replace(" "),
+        # Keep everything else
+        ascii_char([]) |> utf8_string([], min: 1)
+      ])
+    )
+
+  defparsec(:preprocess_query, query_preprocessor)
+
+  # --- End of Parser Definitions ---
 
   @doc """
   Executes a SPARQL query against the blockchain data.
@@ -30,36 +144,48 @@ defmodule Kylix.Query.SparqlEngine do
   """
   def execute(query) do
     try do
-      # Validate the query for security
-      case validate_query(query) do
-        :ok ->
-          # Parse the SPARQL query
-          Logger.debug("Parsing SPARQL query: #{query}")
-          case SparqlParser.parse(query) do
-            {:ok, parsed_query} ->
-              Logger.debug("Parsed query structure: #{inspect(parsed_query)}")
+      # Preprocess the query
+      case preprocess_sparql_query(query) do
+        {:ok, preprocessed_query, prefixes} ->
+          # Validate the query for security
+          case validate_sparql_query(preprocessed_query) do
+            :ok ->
+              # Parse the SPARQL query
+              Logger.debug("Parsing SPARQL query: #{preprocessed_query}")
+              case SparqlParser.parse(preprocessed_query) do
+                {:ok, parsed_query} ->
+                  # Add prefixes to parsed query
+                  parsed_query = Map.put(parsed_query, :prefixes, prefixes)
+                  Logger.debug("Parsed query structure: #{inspect(parsed_query)}")
 
-              # Optimize the query
-              optimized_query = SparqlOptimizer.optimize(parsed_query)
-              Logger.debug("Optimized query structure: #{inspect(optimized_query)}")
+                  # Optimize the query
+                  optimized_query = SparqlOptimizer.optimize(parsed_query)
+                  Logger.debug("Optimized query structure: #{inspect(optimized_query)}")
 
-              # Execute the optimized query
-              result = SparqlExecutor.execute(optimized_query)
-              Logger.debug("Query execution result: #{inspect(result)}")
-              result
+                  # Execute the optimized query
+                  result = SparqlExecutor.execute(optimized_query)
+                  Logger.debug("Query execution result: #{inspect(result)}")
+                  result
+
+                {:error, reason} ->
+                  Logger.error("SPARQL parse error: #{reason}")
+                  {:error, reason}
+              end
 
             {:error, reason} ->
-              Logger.error("SPARQL parse error: #{reason}")
+              Logger.error("SPARQL query validation failed: #{reason}")
               {:error, reason}
           end
 
         {:error, reason} ->
-          Logger.error("SPARQL query validation failed: #{reason}")
+          Logger.error("SPARQL query preprocessing failed: #{reason}")
           {:error, reason}
       end
     rescue
       e ->
         Logger.error("SPARQL execution error: #{Exception.message(e)}")
+        detailed_error = Exception.format(:error, e, __STACKTRACE__)
+        Logger.debug("Detailed error: #{detailed_error}")
         {:error, Exception.message(e)}
     end
   end
@@ -78,10 +204,10 @@ defmodule Kylix.Query.SparqlEngine do
   - {:error, reason} otherwise
   """
   def query_pattern({s, p, o}) do
-    # Convert the pattern to a SPARQL query
-    s_str = if is_nil(s), do: "?s", else: "\"#{s}\""
-    p_str = if is_nil(p), do: "?p", else: "\"#{p}\""
-    o_str = if is_nil(o), do: "?o", else: "\"#{o}\""
+    # Convert the pattern to a SPARQL query, treating non-nil values as URIs
+    s_str = if is_nil(s), do: "?s", else: "<#{s}>"
+    p_str = if is_nil(p), do: "?p", else: "<#{p}>"
+    o_str = if is_nil(o), do: "?o", else: "<#{o}>"
 
     query = "SELECT ?s ?p ?o WHERE { #{s_str} #{p_str} #{o_str} }"
 
@@ -93,6 +219,99 @@ defmodule Kylix.Query.SparqlEngine do
         {:ok, legacy_format_results}
 
       error -> error
+    end
+  end
+
+  # --- Helper Functions ---
+
+  # Preprocess SPARQL query to normalize and collect prefixes
+  defp preprocess_sparql_query(query) do
+    case preprocess_query(query) do
+      {:ok, tokens, "", _, _, _} ->
+        # Extract prefixes
+        {prefixes, other_tokens} =
+          Enum.split_with(tokens, fn
+            {:prefix, _} -> true
+            {:base, _} -> true
+            _ -> false
+          end)
+
+        # Convert prefix tokens to a usable format
+        prefix_map =
+          Enum.reduce(prefixes, %{}, fn
+            {:prefix, [prefix, uri]}, acc -> Map.put(acc, prefix, uri)
+            {:base, [uri]}, acc -> Map.put(acc, "BASE", uri)
+            _, acc -> acc
+          end)
+
+        # Reconstruct the preprocessed query without losing structure
+        preprocessed =
+          other_tokens
+          |> List.flatten()
+          |> Enum.join("")
+          |> String.trim()
+          |> String.replace(~r/\s+/, " ")
+
+        # Create prefix strings to include in the query
+        prefix_strings =
+          Enum.map(prefix_map, fn
+            {"BASE", uri} -> "BASE <#{uri}> "
+            {prefix, uri} -> "PREFIX #{prefix} <#{uri}> "
+          end)
+          |> Enum.join("")
+
+        # Return preprocessed query with prefix declarations
+        final_query = prefix_strings <> preprocessed
+        {:ok, final_query, prefix_map}
+
+      {:ok, _, rest, _, _, _} ->
+        {:error, "Failed to preprocess entire query. Remaining: #{rest}"}
+    end
+  end
+
+  @doc """
+  Validates a SPARQL query for allowed operations.
+  """
+  def validate_sparql_query(query) do
+    # Try to parse query structure to validate it
+    case parse_query_structure(query) do
+      {:ok, tokens, "", _, _, _} ->
+        # Check for disallowed features or security concerns
+        query_type =
+          Enum.find_value(tokens, :unknown, fn
+            :select -> :select
+            :construct -> :construct
+            :describe -> :describe
+            :ask -> :ask
+            _ -> false
+          end)
+
+        # Additional security checks (consider improving with AST parsing)
+        cond do
+          String.contains?(query, "DELETE") ->
+            {:error, "DELETE operations are not allowed"}
+
+          String.contains?(query, "INSERT") ->
+            {:error, "INSERT operations are not allowed"}
+
+          String.contains?(query, "DROP") ->
+            {:error, "DROP operations are not allowed"}
+
+          String.contains?(query, "LOAD") ->
+            {:error, "LOAD operations are not allowed"}
+
+          String.contains?(query, "CLEAR") ->
+            {:error, "CLEAR operations are not allowed"}
+
+          query_type == :unknown ->
+            {:error, "Unknown or unsupported query type"}
+
+          true ->
+            :ok
+        end
+
+      {:ok, _, rest, _, _, _} ->
+        {:error, "Query validation failed, could not parse: #{rest}"}
     end
   end
 
@@ -136,28 +355,112 @@ defmodule Kylix.Query.SparqlEngine do
   end
 
   @doc """
-  Validates a SPARQL query for allowed operations.
+  Explains a SPARQL query by showing its parsed structure and execution plan.
+  Useful for debugging and understanding query performance.
+
+  ## Parameters
+
+  - query: A SPARQL query string
+
+  ## Returns
+
+  - {:ok, explanation} with the query explanation
+  - {:error, reason} if the query could not be parsed
   """
-  def validate_query(query) do
-    # Check for disallowed features or security concerns
-    cond do
-      String.contains?(query, "DELETE") ->
-        {:error, "DELETE operations are not allowed"}
+  def explain(query) do
+    try do
+      # Preprocess the query
+      case preprocess_sparql_query(query) do
+        {:ok, preprocessed_query, prefixes} ->
+          # Parse the query to get structure
+          case SparqlParser.parse(preprocessed_query) do
+            {:ok, parsed_query} ->
+              # Optimize the query and handle possible error
+              case SparqlOptimizer.optimize(parsed_query) do
+                {:ok, optimized_query} ->
+                  # Generate execution plan if available
+                  execution_plan =
+                    if function_exported?(SparqlOptimizer, :create_execution_plan, 1) do
+                      SparqlOptimizer.create_execution_plan(optimized_query)
+                    else
+                      %{note: "Execution plan generation not available"}
+                    end
 
-      String.contains?(query, "INSERT") ->
-        {:error, "INSERT operations are not allowed"}
+                  # Build explanation
+                  explanation = %{
+                    original_query: query,
+                    preprocessed_query: preprocessed_query,
+                    prefixes: prefixes,
+                    parsed_structure: parsed_query,
+                    optimized_structure: optimized_query,
+                    execution_plan: execution_plan
+                  }
 
-      String.contains?(query, "DROP") ->
-        {:error, "DROP operations are not allowed"}
+                  {:ok, explanation}
 
-      String.contains?(query, "LOAD") ->
-        {:error, "LOAD operations are not allowed"}
+                {:error, reason} ->
+                  {:error, "Query optimization failed: #{reason}"}
+              end
 
-      String.contains?(query, "CLEAR") ->
-        {:error, "CLEAR operations are not allowed"}
+            {:error, reason} ->
+              {:error, "Query parsing failed: #{reason}"}
+          end
 
-      true ->
-        :ok
+        {:error, reason} ->
+          {:error, "Query preprocessing failed: #{reason}"}
+      end
+    rescue
+      e ->
+        {:error, "Error explaining query: #{Exception.message(e)}"}
     end
+  end
+
+  @doc """
+  Returns a list of predefined example queries that demonstrate
+  various SPARQL features supported by the Kylix engine.
+
+  ## Returns
+
+  - List of example queries with descriptions
+  """
+  def example_queries do
+    [
+      %{
+        name: "Basic triple pattern",
+        description: "Simple query to match all triples",
+        query: "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10"
+      },
+      %{
+        name: "Filter by subject",
+        description: "Find all relationships for a specific entity",
+        query: "SELECT ?p ?o WHERE { <http://example.org/entity/UHTMilkBatch1> ?p ?o }"
+      },
+      %{
+        name: "Count results",
+        description: "Count the number of triples matching a pattern",
+        query: "SELECT (COUNT(?s) AS ?count) WHERE { ?s ?p ?o }"
+      },
+      %{
+        name: "Group by predicate",
+        description: "Count triples grouped by their predicates",
+        query: "SELECT ?p (COUNT(?s) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p ORDER BY DESC(?count)"
+      },
+      %{
+        name: "PROV-O entity generation",
+        description: "Find entities and their generating activities",
+        query: "SELECT ?entity ?activity WHERE { ?entity <http://www.w3.org/ns/prov#wasGeneratedBy> ?activity }"
+      },
+      %{
+        name: "Optional metadata",
+        description: "Main data with optional metadata if available",
+        query: """
+        SELECT ?s ?p ?o ?metadata
+        WHERE {
+          ?s ?p ?o .
+          OPTIONAL { ?s "metadata" ?metadata }
+        }
+        """
+      }
+    ]
   end
 end
