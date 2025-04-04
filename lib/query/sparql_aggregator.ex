@@ -9,27 +9,18 @@ defmodule Kylix.Query.SparqlAggregator do
   import NimbleParsec
   require Logger
 
-  # Parser definitions for aggregate expressions
+  # Basic whitespace parsers
+  _whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1)
+  optional_whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 0)
 
-  # Basic building blocks
-  whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1)
-  _optional_whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 0)
-
-  # Variable (e.g., ?varname)
-  variable_name =
-    ignore(string("?"))
+  # Simple parsers
+  variable =
+    string("?")
     |> ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1)
-    |> unwrap_and_tag(:variable)
+    |> reduce({Enum, :join, []})
 
-  # DISTINCT keyword
-  distinct_keyword =
-    string("DISTINCT")
-    |> replace(true)
-    |> unwrap_and_tag(:distinct)
-    |> ignore(whitespace)
-
-  # Aggregate function names
-  aggregate_function =
+  # Parse function name (COUNT, SUM, etc.)
+  function =
     choice([
       string("COUNT") |> replace(:count),
       string("SUM") |> replace(:sum),
@@ -38,13 +29,15 @@ defmodule Kylix.Query.SparqlAggregator do
       string("MAX") |> replace(:max),
       string("GROUP_CONCAT") |> replace(:group_concat)
     ])
-    |> unwrap_and_tag(:function)
 
-  # SEPARATOR option for GROUP_CONCAT
-  separator_option =
-    ignore(whitespace)
-    |> ignore(string("SEPARATOR"))
-    |> ignore(whitespace)
+  # Parse DISTINCT keyword
+  distinct = string("DISTINCT") |> replace(true)
+
+  # Parse separator for GROUP_CONCAT
+  separator =
+    optional_whitespace
+    |> string("SEPARATOR")
+    |> ignore(optional_whitespace)
     |> choice([
       ignore(string("'"))
       |> utf8_string([not: ?'], min: 0)
@@ -53,119 +46,34 @@ defmodule Kylix.Query.SparqlAggregator do
       |> utf8_string([not: ?"], min: 0)
       |> ignore(string("\""))
     ])
-    |> unwrap_and_tag(:separator)
 
-  # AS clause for aliasing
+  # Parse AS clause
   as_clause =
-    ignore(whitespace)
-    |> ignore(string("AS"))
-    |> ignore(whitespace)
-    |> concat(ignore(string("?")) |>
-              ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1) |>
-              unwrap_and_tag(:alias))
+    optional_whitespace
+    |> string("AS")
+    |> ignore(optional_whitespace)
+    |> concat(variable)
 
-  # Build parsers for different aggregate expressions
-
-  # COUNT expression - with or without DISTINCT
-  count_expression =
-    ignore(string("("))
-    |> concat(aggregate_function)
+  # Main parser for aggregate expressions
+  defparsec(
+    :parse_aggregate_expr,
+    optional(string("("))  # Make the outer parenthesis optional for flexibility
+    |> unwrap_and_tag(function, :function)
     |> ignore(string("("))
-    |> optional(distinct_keyword)
-    |> concat(variable_name)
+    |> optional(
+      unwrap_and_tag(distinct, :distinct)
+      |> ignore(optional_whitespace)
+    )
+    |> unwrap_and_tag(variable, :variable)
+    |> optional(
+      unwrap_and_tag(separator, :separator)
+    )
     |> ignore(string(")"))
-    |> optional(as_clause)
-    |> ignore(string(")"))
-    |> post_traverse(:finalize_count)
-
-  # SUM/AVG/MIN/MAX expression
-  arithmetic_expression =
-    ignore(string("("))
-    |> concat(aggregate_function)
-    |> ignore(string("("))
-    |> concat(variable_name)
-    |> ignore(string(")"))
-    |> optional(as_clause)
-    |> ignore(string(")"))
-    |> post_traverse(:finalize_arithmetic)
-
-  # GROUP_CONCAT expression
-  group_concat_expression =
-    ignore(string("("))
-    |> concat(aggregate_function)
-    |> ignore(string("("))
-    |> concat(variable_name)
-    |> optional(separator_option)
-    |> ignore(string(")"))
-    |> optional(as_clause)
-    |> ignore(string(")"))
-    |> post_traverse(:finalize_group_concat)
-
-  # Combined aggregate expression parser
-  defparsec :parse_aggregate_expr,
-    choice([
-      count_expression,
-      arithmetic_expression,
-      group_concat_expression
-    ])
-
-  # Post-traversal handlers to finalize parsed results into a map
-
-  defp finalize_count(_rest, args, context, _line, _offset) do
-    # Extract components
-    function = Keyword.get(args, :function)
-    variable = Keyword.get(args, :variable)
-    distinct = Keyword.get(args, :distinct, false)
-    alias_name = Keyword.get(args, :alias, "count_#{if distinct, do: "distinct_", else: ""}#{variable}")
-
-    # Build the result map
-    result = %{
-      function: function,
-      variable: variable,
-      distinct: distinct,
-      alias: alias_name
-    }
-
-    # Return the result
-    {[result], context}
-  end
-
-  defp finalize_arithmetic(_rest, args, context, _line, _offset) do
-    # Extract components
-    function = Keyword.get(args, :function)
-    variable = Keyword.get(args, :variable)
-    alias_name = Keyword.get(args, :alias, "#{function}_#{variable}")
-
-    # Build the result map
-    result = %{
-      function: function,
-      variable: variable,
-      distinct: false, # Arithmetic functions don't support DISTINCT
-      alias: alias_name
-    }
-
-    # Return the result
-    {[result], context}
-  end
-
-  defp finalize_group_concat(_rest, args, context, _line, _offset) do
-    # Extract components
-    variable = Keyword.get(args, :variable)
-    separator = Keyword.get(args, :separator, ",")
-    alias_name = Keyword.get(args, :alias, "group_concat_#{variable}")
-
-    # Build the result map
-    result = %{
-      function: :group_concat,
-      variable: variable,
-      distinct: false,
-      options: %{separator: separator},
-      alias: alias_name
-    }
-
-    # Return the result
-    {[result], context}
-  end
+    |> optional(
+      unwrap_and_tag(as_clause, :alias)
+    )
+    |> optional(string(")"))  # Make the closing parenthesis optional as well
+  )
 
   @doc """
   Parses an aggregate expression using NimbleParsec.
@@ -189,10 +97,41 @@ defmodule Kylix.Query.SparqlAggregator do
     Logger.debug("Parsing aggregate expression: #{expr}")
 
     case parse_aggregate_expr(expr) do
-      {:ok, [result], "", _context, _line, _column} ->
+      {:ok, parsed, "", _, _, _} ->
+        result = %{
+          function: Keyword.get(parsed, :function),
+          variable: String.replace(Keyword.get(parsed, :variable), "?", ""),
+          distinct: Keyword.get(parsed, :distinct, false)
+        }
+
+        # Handle alias if provided, otherwise generate default alias
+        result =
+          case Keyword.get(parsed, :alias) do
+            nil ->
+              alias_name = case result.function do
+                :count ->
+                  prefix = if result.distinct, do: "count_distinct_", else: "count_"
+                  prefix <> result.variable
+                :group_concat -> "group_concat_" <> result.variable
+                other -> "#{other}_#{result.variable}"
+              end
+              Map.put(result, :alias, alias_name)
+            alias_value ->
+              Map.put(result, :alias, String.replace(alias_value, "?", ""))
+          end
+
+        # Handle separator for group_concat
+        result =
+          if result.function == :group_concat do
+            separator = Keyword.get(parsed, :separator, ",")
+            Map.put(result, :options, %{separator: separator})
+          else
+            result
+          end
+
         {:ok, result}
 
-      {:ok, _result, rest, _context, _line, _column} ->
+      {:ok, _result, rest, _, _, _} ->
         Logger.warning("Failed to parse entire aggregate expression. Remaining: #{rest}")
         {:error, "Failed to parse entire expression: #{expr}"}
 
