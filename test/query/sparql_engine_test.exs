@@ -2,15 +2,10 @@ defmodule Kylix.Query.SparqlEngineTest do
   use ExUnit.Case
   alias Kylix.Storage.DAGEngine
   alias Kylix.Query.SparqlEngine
-  alias Kylix.Query.SparqlParser
 
-  # Setup test data before each test
   setup do
-    # Reset the application for each test
     :ok = Application.stop(:kylix)
     {:ok, _} = Application.ensure_all_started(:kylix)
-
-    # Create PROV-O test data
     setup_provo_test_data()
     :ok
   end
@@ -19,11 +14,7 @@ defmodule Kylix.Query.SparqlEngineTest do
     test "executes basic query" do
       query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o }"
       {:ok, results} = SparqlEngine.execute(query)
-
-      # Verify we get results
       assert length(results) > 0
-
-      # Verify result structure
       result = hd(results)
       assert Map.has_key?(result, "s")
       assert Map.has_key?(result, "p")
@@ -31,36 +22,26 @@ defmodule Kylix.Query.SparqlEngineTest do
     end
 
     test "executes query with exact match for PROV-O wasGeneratedBy relationship" do
-      # Query for a specific PROV-O relationship
       query = """
       SELECT ?entity ?activity WHERE {
         "entity:document1" "prov:wasGeneratedBy" "activity:process1"
       }
       """
       {:ok, results} = SparqlEngine.execute(query)
-
-      # We should get exactly one result
       assert length(results) == 1
-
-      # The result should have the expected values
       result = hd(results)
       assert result["entity"] == "entity:document1"
       assert result["activity"] == "activity:process1"
     end
 
     test "executes query with partial match for PROV-O entity" do
-      # Query for all activities that generated a specific entity
       query = """
       SELECT ?activity WHERE {
         "entity:document1" "prov:wasGeneratedBy" ?activity
       }
       """
       {:ok, results} = SparqlEngine.execute(query)
-
-      # We should get at least one result
       assert length(results) >= 1
-
-      # The activity should match our expected value
       result = hd(results)
       assert result["activity"] == "activity:process1"
     end
@@ -73,10 +54,7 @@ defmodule Kylix.Query.SparqlEngineTest do
       SELECT  ?entity   ?activity /* Another comment */
       WHERE   {  ?entity  "prov:wasGeneratedBy"  ?activity  }
       """
-
       {:ok, results} = SparqlEngine.execute(query)
-
-      # Verify results still work despite comments and varied whitespace
       assert is_list(results)
       assert length(results) > 0
     end
@@ -85,33 +63,26 @@ defmodule Kylix.Query.SparqlEngineTest do
       query = """
       PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
       PREFIX prov: <http://www.w3.org/ns/prov#>
-
       SELECT ?entity ?activity
       WHERE {
         ?entity prov:wasGeneratedBy ?activity
       }
       """
-
-      # The test should verify prefixes are properly processed and queries execute correctly
       {:ok, results} = SparqlEngine.execute(query)
       assert is_list(results)
       assert length(results) > 0
     end
 
     test "rejects queries with disallowed operations" do
-      # Test that DELETE operations are properly blocked
       delete_query = """
       DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }
       """
-
       result = SparqlEngine.execute(delete_query)
       assert match?({:error, _}, result)
 
-      # Test that INSERT operations are properly blocked
       insert_query = """
       INSERT { ?s ?p ?o } WHERE { ?s ?p ?o }
       """
-
       result = SparqlEngine.execute(insert_query)
       assert match?({:error, _}, result)
     end
@@ -125,14 +96,11 @@ defmodule Kylix.Query.SparqlEngineTest do
         ?derivedEntity "prov:wasDerivedFrom" ?sourceEntity
       }
       """
-
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) > 0
-
-      # The result should contain derived entity and source entity
       result = hd(results)
       assert result["derivedEntity"] == "entity:report1"
-      assert result["sourceEntity"] == "entity:dataset1"
+      assert result["sourceEntity"] == "entity:document1"
     end
 
     test "executes query for agent attribution" do
@@ -142,11 +110,8 @@ defmodule Kylix.Query.SparqlEngineTest do
         ?entity "prov:wasAttributedTo" ?agent
       }
       """
-
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) > 0
-
-      # The result should contain entity and agent
       result = hd(results)
       assert result["entity"] == "entity:report1"
       assert result["agent"] == "agent:researcher1"
@@ -160,11 +125,8 @@ defmodule Kylix.Query.SparqlEngineTest do
         ?activity "prov:wasAssociatedWith" ?agent
       }
       """
-
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) > 0
-
-      # The result should have all three variables bound
       result = hd(results)
       assert result["entity"] != nil
       assert result["activity"] != nil
@@ -180,11 +142,8 @@ defmodule Kylix.Query.SparqlEngineTest do
         ?entity "prov:wasGeneratedBy" ?activity
       }
       """
-
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) == 1
-
-      # The result should have the count
       result = hd(results)
       assert result["entityCount"] > 0
     end
@@ -197,11 +156,8 @@ defmodule Kylix.Query.SparqlEngineTest do
       }
       GROUP BY ?agent
       """
-
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) > 0
-
-      # Each result should have an agent and a count
       result = hd(results)
       assert result["agent"] != nil
       assert result["entityCount"] > 0
@@ -211,10 +167,7 @@ defmodule Kylix.Query.SparqlEngineTest do
   describe "New API functions" do
     test "explain function provides query analysis" do
       query = "SELECT ?entity ?activity WHERE { ?entity \"prov:wasGeneratedBy\" ?activity }"
-
       {:ok, explanation} = SparqlEngine.explain(query)
-
-      # Verify the explanation contains the expected sections
       assert Map.has_key?(explanation, :original_query)
       assert Map.has_key?(explanation, :preprocessed_query)
       assert Map.has_key?(explanation, :parsed_structure)
@@ -223,12 +176,8 @@ defmodule Kylix.Query.SparqlEngineTest do
 
     test "example_queries returns a list of example queries" do
       examples = SparqlEngine.example_queries()
-
-      # Verify examples are returned
       assert is_list(examples)
       assert length(examples) > 0
-
-      # Each example should have name, description and query
       example = hd(examples)
       assert Map.has_key?(example, :name)
       assert Map.has_key?(example, :description)
@@ -236,25 +185,19 @@ defmodule Kylix.Query.SparqlEngineTest do
     end
   end
 
-  # --- Helper Functions ---
-
-  # Setup PROV-O test data with a provenance graph
   defp setup_provo_test_data do
-    # Clear any existing data
     if function_exported?(DAGEngine, :clear_all, 0) do
       DAGEngine.clear_all()
     end
 
-    # dataset -> (wasGeneratedBy) -> process
     DAGEngine.add_node("prov1", %{
-      subject: "entity:dataset1",
+      subject: "entity:document1",
       predicate: "prov:wasGeneratedBy",
       object: "activity:process1",
       validator: "agent:validator1",
       timestamp: DateTime.utc_now()
     })
 
-    # process -> (wasAssociatedWith) -> researcher
     DAGEngine.add_node("prov2", %{
       subject: "activity:process1",
       predicate: "prov:wasAssociatedWith",
@@ -263,16 +206,14 @@ defmodule Kylix.Query.SparqlEngineTest do
       timestamp: DateTime.utc_now()
     })
 
-    # report -> (wasDerivedFrom) -> dataset
     DAGEngine.add_node("prov3", %{
       subject: "entity:report1",
       predicate: "prov:wasDerivedFrom",
-      object: "entity:dataset1",
+      object: "entity:document1",
       validator: "agent:validator1",
       timestamp: DateTime.utc_now()
     })
 
-    # report -> (wasAttributedTo) -> researcher
     DAGEngine.add_node("prov4", %{
       subject: "entity:report1",
       predicate: "prov:wasAttributedTo",
@@ -281,7 +222,6 @@ defmodule Kylix.Query.SparqlEngineTest do
       timestamp: DateTime.utc_now()
     })
 
-    # Add some edges to represent relationships between the provenance nodes
     DAGEngine.add_edge("prov1", "prov2", "process_association")
     DAGEngine.add_edge("prov3", "prov1", "derivation_source")
     DAGEngine.add_edge("prov4", "prov2", "attribution_agent")

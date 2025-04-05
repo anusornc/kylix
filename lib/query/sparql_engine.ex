@@ -1,10 +1,6 @@
 defmodule Kylix.Query.SparqlEngine do
   @moduledoc """
   Provides SPARQL query capabilities for the blockchain data.
-
-  This module integrates the SPARQL parser and executor to provide
-  a complete SPARQL query solution for the Kylix blockchain.
-  Enhanced with NimbleParsec for robust query preprocessing and validation.
   """
 
   import NimbleParsec
@@ -16,36 +12,29 @@ defmodule Kylix.Query.SparqlEngine do
 
   # --- NimbleParsec Parser Definitions ---
 
-  # Whitespace handling
   whitespace = ascii_string([?\s, ?\n, ?\r, ?\t], min: 1)
   optional_whitespace = ascii_string([?\s, ?\n, ?\r, ?\t], min: 0)
 
-  # Comment parser (single-line and multi-line)
   single_line_comment =
     string("#")
     |> repeat(ascii_char(not: ?\n))
     |> optional(string("\n"))
     |> replace(:comment)
-
   multi_line_comment =
     string("/*")
     |> repeat(lookahead_not(string("*/")) |> ascii_char([]))
     |> string("*/")
     |> replace(:comment)
-
   any_comment = choice([single_line_comment, multi_line_comment])
 
-  # PREFIX declaration parser
   prefix_name =
     optional(ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1))
     |> string(":")
     |> reduce({Enum, :join, [""]})
-
   prefix_uri =
     ignore(string("<"))
     |> ascii_string([not: ?>], min: 1)
     |> ignore(string(">"))
-
   prefix_decl =
     ignore(optional_whitespace)
     |> ignore(string("PREFIX"))
@@ -56,7 +45,6 @@ defmodule Kylix.Query.SparqlEngine do
     |> ignore(optional_whitespace)
     |> tag(:prefix)
 
-  # BASE declaration parser
   base_decl =
     ignore(optional_whitespace)
     |> ignore(string("BASE"))
@@ -67,14 +55,12 @@ defmodule Kylix.Query.SparqlEngine do
     |> ignore(optional_whitespace)
     |> tag(:base)
 
-  # Main SPARQL query components
   select_keyword = ignore(optional_whitespace) |> string("SELECT") |> replace(:select)
   construct_keyword = ignore(optional_whitespace) |> string("CONSTRUCT") |> replace(:construct)
   describe_keyword = ignore(optional_whitespace) |> string("DESCRIBE") |> replace(:describe)
   ask_keyword = ignore(optional_whitespace) |> string("ASK") |> replace(:ask)
   query_type = choice([select_keyword, construct_keyword, describe_keyword, ask_keyword])
 
-  # Simple validator for query structure
   query_structure_validator =
     optional(repeat(choice([prefix_decl, base_decl, any_comment, whitespace |> ignore()])))
     |> concat(query_type)
@@ -85,10 +71,8 @@ defmodule Kylix.Query.SparqlEngine do
         utf8_string([not: ?\s, not: ?\n, not: ?\r, not: ?\t], min: 1)
       ])
     )
-
   defparsec(:parse_query_structure, query_structure_validator)
 
-  # Query preprocessor to normalize and extract metadata
   query_preprocessor =
     repeat(
       choice([
@@ -96,7 +80,6 @@ defmodule Kylix.Query.SparqlEngine do
         base_decl,
         any_comment |> ignore(),
         whitespace |> replace(" "),
-        # Explicitly match all SPARQL keywords to prevent token splitting
         choice([
           string("SELECT"),
           string("CONSTRUCT"),
@@ -108,18 +91,11 @@ defmodule Kylix.Query.SparqlEngine do
           string("LOAD"),
           string("CLEAR")
         ]),
-        # Capture other tokens as whole strings up to whitespace
         utf8_string([not: ?\s, not: ?\n, not: ?\r, not: ?\t], min: 1)
       ])
     )
-
   defparsec(:preprocess_query, query_preprocessor)
 
-  # --- End of Parser Definitions ---
-
-  @doc """
-  Executes a SPARQL query against the blockchain data.
-  """
   def execute(query) do
     try do
       normalized_query = query |> ensure_utf8_encoding() |> String.trim()
@@ -141,6 +117,7 @@ defmodule Kylix.Query.SparqlEngine do
                     end
                   Logger.debug("Optimized query structure: #{inspect(optimized_query)}")
                   result = SparqlExecutor.execute(optimized_query)
+                  Logger.debug("Executor raw result: #{inspect(result)}")
                   Logger.debug("Query execution result: #{inspect(result)}")
                   result
                 {:error, reason} ->
@@ -164,9 +141,6 @@ defmodule Kylix.Query.SparqlEngine do
     end
   end
 
-  @doc """
-  Backwards compatibility method for simple triple pattern queries.
-  """
   def query_pattern({s, p, o}) do
     s_str = if is_nil(s), do: "?s", else: "\"#{s}\""
     p_str = if is_nil(p), do: "?p", else: "\"#{p}\""
@@ -178,8 +152,6 @@ defmodule Kylix.Query.SparqlEngine do
       error -> error
     end
   end
-
-  # --- Helper Functions ---
 
   defp ensure_utf8_encoding(input) when is_binary(input) do
     case :unicode.characters_to_binary(input, :utf8, :utf8) do
@@ -195,7 +167,7 @@ defmodule Kylix.Query.SparqlEngine do
   defp preprocess_sparql_query(query) do
     Logger.debug("Preprocess - Input: #{inspect(query)}")
     query =
-      if !String.match?(query, ~r/^\s*(?:PREFIX|BASE|SELECT|CONSTRUCT|DESCRIBE|ASK)/i) do
+      if !String.match?(query, ~r/^\s*(#.*\n\s*)*(?:PREFIX|BASE|SELECT|CONSTRUCT|DESCRIBE|ASK)/i) do
         "SELECT " <> query
       else
         query
@@ -233,7 +205,7 @@ defmodule Kylix.Query.SparqlEngine do
           end)
           |> Enum.join("")
         Logger.debug("Preprocess - Prefix strings: #{inspect(prefix_strings)}")
-        final_query = prefix_strings <> preprocessed
+        final_query = preprocessed  # Only the query body
         Logger.debug("Preprocess - Final query: #{inspect(final_query)}")
         {:ok, final_query, prefix_map}
       {:ok, _, rest, _, _, _} ->
@@ -242,9 +214,6 @@ defmodule Kylix.Query.SparqlEngine do
     end
   end
 
-  @doc """
-  Validates a SPARQL query for allowed operations.
-  """
   def validate_sparql_query(query) do
     cond do
       String.contains?(query, "DELETE") -> {:error, "DELETE operations are not allowed"}
@@ -253,10 +222,10 @@ defmodule Kylix.Query.SparqlEngine do
       String.contains?(query, "LOAD") -> {:error, "LOAD operations are not allowed"}
       String.contains?(query, "CLEAR") -> {:error, "CLEAR operations are not allowed"}
       true ->
-        if String.match?(query, ~r/^\s*(?:SELECT|CONSTRUCT|DESCRIBE|ASK)/i) do
+        if String.match?(query, ~r/^\s*(?:(?:PREFIX|BASE)\s+.*\s+)*(?:SELECT|CONSTRUCT|DESCRIBE|ASK)/i) do
           :ok
         else
-          {:error, "Query must start with SELECT, CONSTRUCT, DESCRIBE, or ASK"}
+          {:error, "Query must start with SELECT, CONSTRUCT, DESCRIBE, or ASK (optionally preceded by PREFIX or BASE)"}
         end
     end
   end
@@ -279,9 +248,6 @@ defmodule Kylix.Query.SparqlEngine do
     end)
   end
 
-  @doc """
-  Explains a SPARQL query by showing its parsed structure and execution plan.
-  """
   def explain(query) do
     try do
       Logger.debug("Explain - Input to ensure_utf8_encoding: #{inspect(query)}")
@@ -328,9 +294,6 @@ defmodule Kylix.Query.SparqlEngine do
     end
   end
 
-  @doc """
-  Returns a list of predefined example queries.
-  """
   def example_queries do
     [
       %{
