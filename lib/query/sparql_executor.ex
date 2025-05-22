@@ -170,13 +170,20 @@ defmodule Kylix.Query.SparqlExecutor do
       else
         results =
           Enum.reduce(patterns, [%{}], fn pattern, current_solutions ->
-            Enum.flat_map(current_solutions, fn solution ->
-              pattern_results = execute_pattern(pattern, solution)
-              Enum.map(pattern_results, fn pattern_binding ->
-                merge_bindings(solution, pattern_binding, pattern)
+            # ADDED CHECK: Ensure pattern is a map
+            if !is_map(pattern) do
+              Logger.warning("SparqlExecutor: execute_base_patterns encountered a non-map pattern: #{inspect(pattern)}. Skipping this pattern.")
+              current_solutions # Pass through existing solutions without processing this bad pattern
+            else
+              # Original logic if pattern is a map
+              Enum.flat_map(current_solutions, fn solution ->
+                pattern_results = execute_pattern(pattern, solution)
+                Enum.map(pattern_results, fn pattern_binding ->
+                  merge_bindings(solution, pattern_binding, pattern)
+                end)
+                |> Enum.filter(&(&1 != nil))
               end)
-              |> Enum.filter(&(&1 != nil))
-            end)
+            end
           end)
         Logger.debug("Base results: #{inspect(results)}")
         {:ok, results}
@@ -187,32 +194,77 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   defp execute_pattern(pattern, binding) do
+    # Assuming pattern and binding are valid maps due to prior checks or logic
     {s, p, o} = extract_pattern_values(pattern, binding)
-    Logger.debug("Executing DAG query with pattern: {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
-    case Kylix.Storage.Coordinator.query({s, p, o}) do
-      {:ok, results} -> convert_dag_results(results, pattern)
-      error ->
-        Logger.error("Error querying DAG: #{inspect(error)}")
+    Logger.debug("SparqlExecutor: Executing DAG query with pattern: {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}} for binding: #{inspect(binding)}")
+    
+    try do
+      case Kylix.Storage.Coordinator.query({s, p, o}) do
+        {:ok, results} ->
+          # Assuming convert_dag_results is now robust from previous fixes
+          convert_dag_results(results, pattern)
+        {:error, reason} ->
+          Logger.error("SparqlExecutor: Coordinator.query returned explicit error: #{inspect(reason)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
+          []
+        unexpected_value ->
+          # This case handles returns from Coordinator.query that are neither {:ok, _} nor {:error, _}
+          Logger.error("SparqlExecutor: Coordinator.query returned an unexpected value: #{inspect(unexpected_value)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Treating as no results.")
+          []
+      end
+    rescue
+      # Catch specific errors that might arise if Coordinator.query (or DAGEngine.query) has an internal issue
+      # and raises instead of returning {:error, ...}
+      e in [BadMapError, KeyError] ->
+        Logger.error("SparqlExecutor: Rescued critical error during Coordinator.query processing for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Stacktrace: #{inspect(Exception.stacktrace())}. Returning empty results.")
         []
+      # Optionally, catch other exceptions if deemed necessary, or let them propagate to be caught by execute_base_patterns
+      # For now, only BadMapError and KeyError are caught here.
+      # e ->
+      #   Logger.error("SparqlExecutor: Rescued other exception during Coordinator.query for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Rethrowing.")
+      #   reraise e, __STACKTRACE__
     end
   end
 
   defp convert_dag_results(results, pattern) do
-    Enum.map(results, fn {node_id, data, edges} ->
-      result = %{
-        "node_id" => node_id,
-        "s" => data.subject,
-        "p" => data.predicate,
-        "o" => data.object
-      }
-      result = if Map.has_key?(data, :validator), do: Map.put(result, "validator", data.validator), else: result
-      result = if Map.has_key?(data, :timestamp), do: Map.put(result, "timestamp", data.timestamp), else: result
-      result = Map.put(result, "edges", edges)
-      result = if pattern[:s] == nil, do: Map.put(result, "s", data.subject), else: result
-      result = if pattern[:p] == nil, do: Map.put(result, "p", data.predicate), else: result
-      result = if pattern[:o] == nil, do: Map.put(result, "o", data.object), else: result
-      Kylix.Query.VariableMapper.apply_mappings(result, data)
+    Enum.reduce(results, [], fn item, acc ->
+      case item do
+        {node_id, data, edges} when is_map(data) ->
+          # Ensure essential fields are present before creating the base map
+          if Map.has_key?(data, :subject) && Map.has_key?(data, :predicate) && Map.has_key?(data, :object) do
+            current_result_base = %{
+              "node_id" => node_id,
+              "s" => data.subject,
+              "p" => data.predicate,
+              "o" => data.object
+            }
+            
+            # Add optional fields if they exist in data
+            current_result_with_optional = 
+              Enum.reduce([:validator, :timestamp], current_result_base, fn key, inner_acc ->
+                if Map.has_key?(data, key) do
+                  Map.put(inner_acc, Atom.to_string(key), Map.get(data, key))
+                else
+                  inner_acc
+                end
+              end)
+
+            current_result_final = Map.put(current_result_with_optional, "edges", edges)
+            
+            # Assuming VariableMapper correctly uses the "s", "p", "o" from current_result_final.
+            # Original re-mapping lines based on pattern[:s] == nil are omitted for now.
+            
+            final_mapped_result = Kylix.Query.VariableMapper.apply_mappings(current_result_final, data)
+            [final_mapped_result | acc]
+          else
+            Logger.warning("SparqlExecutor: Skipping result item due to map data missing core :subject, :predicate, or :object fields. Data: #{inspect(data)}, Pattern: #{inspect(pattern)}")
+            acc
+          end
+        _invalid_item ->
+          Logger.warning("SparqlExecutor: Skipping invalid item from Coordinator.query. Expected {node_id, data_map, edges}. Got: #{inspect(_invalid_item)}, Pattern: #{inspect(pattern)}")
+          acc
+      end
     end)
+    |> Enum.reverse() # Reverse because items were prepended
   end
 
   defp extract_pattern_values(pattern, binding) do
