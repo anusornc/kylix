@@ -170,19 +170,30 @@ defmodule Kylix.Query.SparqlExecutor do
       else
         results =
           Enum.reduce(patterns, [%{}], fn pattern, current_solutions ->
-            # ADDED CHECK: Ensure pattern is a map
-            if !is_map(pattern) do
-              Logger.warning("SparqlExecutor: execute_base_patterns encountered a non-map pattern: #{inspect(pattern)}. Skipping this pattern.")
-              current_solutions # Pass through existing solutions without processing this bad pattern
-            else
-              # Original logic if pattern is a map
-              Enum.flat_map(current_solutions, fn solution ->
-                pattern_results = execute_pattern(pattern, solution)
-                Enum.map(pattern_results, fn pattern_binding ->
-                  merge_bindings(solution, pattern_binding, pattern)
+            try do
+              # Check for `is_map(pattern)` is already here from a previous fix
+              if !is_map(pattern) do
+                Logger.warning("SparqlExecutor: (reduce) non-map pattern: #{inspect(pattern)}. Skipping.")
+                current_solutions 
+              else
+                Enum.flat_map(current_solutions, fn solution ->
+                  # Check for `is_map(solution)` is already here from a previous fix
+                  if !is_map(solution) do
+                    Logger.warning("SparqlExecutor: (flat_map) non-map solution: #{inspect(solution)}. Skipping path.")
+                    [] 
+                  else
+                    pattern_results = execute_pattern(pattern, solution)
+                    Enum.map(pattern_results, fn pattern_binding ->
+                      merge_bindings(solution, pattern_binding, pattern)
+                    end)
+                    |> Enum.filter(&(&1 != nil))
+                  end
                 end)
-                |> Enum.filter(&(&1 != nil))
-              end)
+              end
+            rescue
+              e in [BadMapError] ->
+                Logger.error("SparqlExecutor: Rescued BadMapError in execute_base_patterns' reduce loop. Error: #{inspect(e)}, Pattern: #{inspect(pattern)}, CurrentSolutions: #{inspect(current_solutions)}. Stacktrace: #{inspect(__STACKTRACE__)}. Continuing with current solutions.")
+                current_solutions # Continue with solutions from before this problematic pattern
             end
           end)
         Logger.debug("Base results: #{inspect(results)}")
@@ -215,7 +226,7 @@ defmodule Kylix.Query.SparqlExecutor do
       # Catch specific errors that might arise if Coordinator.query (or DAGEngine.query) has an internal issue
       # and raises instead of returning {:error, ...}
       e in [BadMapError, KeyError] ->
-        Logger.error("SparqlExecutor: Rescued critical error during Coordinator.query processing for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Stacktrace: #{inspect(Exception.stacktrace())}. Returning empty results.")
+        Logger.error("SparqlExecutor: Rescued critical error during Coordinator.query processing for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Stacktrace: #{inspect(__STACKTRACE__)}. Returning empty results.")
         []
       # Optionally, catch other exceptions if deemed necessary, or let them propagate to be caught by execute_base_patterns
       # For now, only BadMapError and KeyError are caught here.
@@ -275,28 +286,44 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   defp merge_bindings(binding1, binding2, pattern) do
-    # Extract variable names from the pattern
-    s_var = if is_atom(pattern[:s]), do: Atom.to_string(pattern[:s]), else: "s"
-    p_var = if is_atom(pattern[:p]), do: Atom.to_string(pattern[:p]), else: "p"
-    o_var = if is_atom(pattern[:o]), do: Atom.to_string(pattern[:o]), else: "o"
+    # Ensure pattern is a map before accessing its keys, though prior checks should guarantee this.
+    # This function assumes binding1 and binding2 are maps.
+    s_var_val = if is_map(pattern), do: pattern[:s], else: nil
+    p_var_val = if is_map(pattern), do: pattern[:p], else: nil
+    o_var_val = if is_map(pattern), do: pattern[:o], else: nil
 
-    # Merge bindings, respecting variable names from the pattern
-    Enum.reduce(binding2, binding1, fn {key, val}, acc ->
-      new_key = case key do
-        "s" -> s_var
-        "p" -> p_var
-        "o" -> o_var
-        _ -> key
-      end
-      if Map.has_key?(acc, new_key) do
-        existing_val = Map.get(acc, new_key)
-        if existing_val == nil || existing_val == val do
-          Map.put(acc, new_key, val)
-        else
-          nil  # Conflict, discard
-        end
+    s_var = if is_atom(s_var_val), do: Atom.to_string(s_var_val), else: "s"
+    p_var = if is_atom(p_var_val), do: Atom.to_string(p_var_val), else: "p"
+    o_var = if is_atom(o_var_val), do: Atom.to_string(o_var_val), else: "o"
+
+    Enum.reduce_while(binding2, binding1, fn {key, val}, acc ->
+      # Acc is binding1 (solution). If it became nil from a previous step in this reduce, halt.
+      # This check is primarily for safety; the main halt condition is the conflict itself.
+      if is_nil(acc) do # Should not happen if halt on conflict works correctly
+        {:halt, nil}
       else
-        Map.put(acc, new_key, val)
+        new_key = case key do
+          "s" -> s_var
+          "p" -> p_var
+          "o" -> o_var
+          _ -> key
+        end
+
+        if Map.has_key?(acc, new_key) do
+          existing_val = Map.get(acc, new_key)
+          # Allow merging if existing_val is nil (effectively an overwrite)
+          # or if values are identical (no change or redundant info)
+          if existing_val == val or is_nil(existing_val) do
+            {:cont, Map.put(acc, new_key, val)}
+          else
+            # Conflict: existing_val is different and not nil.
+            Logger.debug("SparqlExecutor: merge_bindings conflict for key '#{new_key}'. Existing: '#{inspect(existing_val)}', New: '#{inspect(val)}'. Discarding solution branch.")
+            {:halt, nil} 
+          end
+        else
+          # New key, just add it
+          {:cont, Map.put(acc, new_key, val)}
+        end
       end
     end)
   end
