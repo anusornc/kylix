@@ -285,44 +285,63 @@ defmodule Kylix.Query.SparqlExecutor do
     {s, p, o}
   end
 
-  defp merge_bindings(binding1, binding2, pattern) do
-    # Ensure pattern is a map before accessing its keys, though prior checks should guarantee this.
-    # This function assumes binding1 and binding2 are maps.
-    s_var_val = if is_map(pattern), do: pattern[:s], else: nil
-    p_var_val = if is_map(pattern), do: pattern[:p], else: nil
-    o_var_val = if is_map(pattern), do: pattern[:o], else: nil
+  defp merge_bindings(current_solution, new_triple_bindings, pattern) do
+    # current_solution: map with query variables as keys (e.g., %{"?s" => "val"})
+    # new_triple_bindings: map from convert_dag_results (keys "s", "p", "o", "entity", etc.)
+    # pattern: the SPARQL pattern map (e.g., %{s: :"?s", p: "literal_p", o: :"?o"})
 
-    s_var = if is_atom(s_var_val), do: Atom.to_string(s_var_val), else: "s"
-    p_var = if is_atom(p_var_val), do: Atom.to_string(p_var_val), else: "p"
-    o_var = if is_atom(o_var_val), do: Atom.to_string(o_var_val), else: "o"
+    # Helper to get the variable name string if pattern_part is a variable atom, else nil
+    get_var_name = fn pattern_part ->
+      if is_atom(pattern_part) and Atom.to_string(pattern_part) |> String.starts_with?("?") do
+        Atom.to_string(pattern_part)
+      else
+        nil # It's a literal or not a variable atom
+      end
+    end
 
-    Enum.reduce_while(binding2, binding1, fn {key, val}, acc ->
-      # Acc is binding1 (solution). If it became nil from a previous step in this reduce, halt.
-      # This check is primarily for safety; the main halt condition is the conflict itself.
-      if is_nil(acc) do # Should not happen if halt on conflict works correctly
+    s_var_name_in_pattern = get_var_name.(Map.get(pattern, :s))
+    p_var_name_in_pattern = get_var_name.(Map.get(pattern, :p))
+    o_var_name_in_pattern = get_var_name.(Map.get(pattern, :o))
+
+    # Start with the current solution
+    Enum.reduce_while(new_triple_bindings, current_solution, fn {key_from_triple, value_from_triple}, acc ->
+      if is_nil(acc) do # Propagate nil if a conflict already occurred and halted the accumulator
         {:halt, nil}
       else
-        new_key = case key do
-          "s" -> s_var
-          "p" -> p_var
-          "o" -> o_var
-          _ -> key
-        end
+        target_var_name_for_binding = 
+          cond do
+            key_from_triple == "s" && s_var_name_in_pattern -> s_var_name_in_pattern
+            key_from_triple == "p" && p_var_name_in_pattern -> p_var_name_in_pattern
+            key_from_triple == "o" && o_var_name_in_pattern -> o_var_name_in_pattern
+            # Other keys (e.g., from VariableMapper like "entity") are treated as direct variable names
+            # if they don't overwrite an existing s,p,o variable from the pattern.
+            !Enum.member?(["s", "p", "o"], key_from_triple) -> key_from_triple
+            # If key_from_triple is "s", "p", "o" but the corresponding pattern part was a literal (no var_name),
+            # then this component was for matching only, not for binding under "s", "p", "o".
+            true -> nil 
+          end
 
-        if Map.has_key?(acc, new_key) do
-          existing_val = Map.get(acc, new_key)
-          # Allow merging if existing_val is nil (effectively an overwrite)
-          # or if values are identical (no change or redundant info)
-          if existing_val == val or is_nil(existing_val) do
-            {:cont, Map.put(acc, new_key, val)}
+        if target_var_name_for_binding do
+          # This is a variable we need to bind
+          if Map.has_key?(acc, target_var_name_for_binding) do
+            existing_val = Map.get(acc, target_var_name_for_binding)
+            # Compatible if values are same, or if existing was nil (first binding for this var in this solution path)
+            if existing_val == value_from_triple or is_nil(existing_val) do
+              {:cont, Map.put(acc, target_var_name_for_binding, value_from_triple)}
+            else
+              # Conflict: variable already bound to a different value
+              Logger.debug("SparqlExecutor: merge_bindings conflict for variable '#{target_var_name_for_binding}'. Existing: '#{inspect(existing_val)}', New: '#{inspect(value_from_triple)}'. Discarding solution branch.")
+              {:halt, nil} 
+            end
           else
-            # Conflict: existing_val is different and not nil.
-            Logger.debug("SparqlExecutor: merge_bindings conflict for key '#{new_key}'. Existing: '#{inspect(existing_val)}', New: '#{inspect(val)}'. Discarding solution branch.")
-            {:halt, nil} 
+            # New variable binding for this solution
+            {:cont, Map.put(acc, target_var_name_for_binding, value_from_triple)}
           end
         else
-          # New key, just add it
-          {:cont, Map.put(acc, new_key, val)}
+          # key_from_triple was "s", "p", or "o" but corresponded to a literal in the pattern,
+          # or it's some other key from new_triple_bindings we don't want to turn into a solution variable.
+          # In this case, we just continue with the accumulator unchanged by this specific key-value.
+          {:cont, acc}
         end
       end
     end)
