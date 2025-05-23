@@ -270,8 +270,8 @@ defmodule Kylix.Query.SparqlExecutor do
             Logger.warning("SparqlExecutor: Skipping result item due to map data missing core :subject, :predicate, or :object fields. Data: #{inspect(data)}, Pattern: #{inspect(pattern)}")
             acc
           end
-        _invalid_item ->
-          Logger.warning("SparqlExecutor: Skipping invalid item from Coordinator.query. Expected {node_id, data_map, edges}. Got: #{inspect(_invalid_item)}, Pattern: #{inspect(pattern)}")
+        item_to_log -> # Renamed from _invalid_item
+          Logger.warning("SparqlExecutor: Skipping invalid item from Coordinator.query. Expected {node_id, data_map, edges}. Got: #{inspect(item_to_log)}, Pattern: #{inspect(pattern)}")
           acc
       end
     end)
@@ -279,9 +279,27 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   defp extract_pattern_values(pattern, binding) do
-    s = if pattern[:s] == nil, do: Map.get(binding, "s"), else: pattern[:s]
-    p = if pattern[:p] == nil, do: Map.get(binding, "p"), else: pattern[:p]
-    o = if pattern[:o] == nil, do: Map.get(binding, "o"), else: pattern[:o]
+    # pattern is expected to be a map like %{"s" => "?s_var", "p" => "<literal>", "o" => "?o_var"}
+    # or %{"s" => nil, ...} if a component is a wildcard for Coordinator.query
+    # binding is a map like %{"?s_var" => "actual_value_for_s"}
+
+    resolve_value = fn key_str ->
+      pattern_component = Map.get(pattern, key_str) # Use string key "s", "p", or "o"
+
+      cond do
+        is_binary(pattern_component) and String.starts_with?(pattern_component, "?") ->
+          # It's a variable like "?s_var", look it up in the binding.
+          # If not found in binding (e.g., first pattern), Map.get returns nil, which is correct.
+          Map.get(binding, pattern_component)
+        true ->
+          # It's a literal URI/value, or nil (for wildcard). Use as is.
+          pattern_component
+      end
+    end
+
+    s = resolve_value.("s")
+    p = resolve_value.("p")
+    o = resolve_value.("o")
     {s, p, o}
   end
 
@@ -290,18 +308,19 @@ defmodule Kylix.Query.SparqlExecutor do
     # new_triple_bindings: map from convert_dag_results (keys "s", "p", "o", "entity", etc.)
     # pattern: the SPARQL pattern map (e.g., %{s: :"?s", p: "literal_p", o: :"?o"})
 
-    # Helper to get the variable name string if pattern_part is a variable atom, else nil
-    get_var_name = fn pattern_part ->
-      if is_atom(pattern_part) and Atom.to_string(pattern_part) |> String.starts_with?("?") do
-        Atom.to_string(pattern_part)
+    # Helper to get the variable name string if pattern_value is a variable string, else nil
+    get_var_name = fn pattern_value ->
+      if is_binary(pattern_value) and String.starts_with?(pattern_value, "?") do
+        pattern_value # The variable name itself, e.g., "?s"
       else
-        nil # It's a literal or not a variable atom
+        nil # It's a literal or nil
       end
     end
 
-    s_var_name_in_pattern = get_var_name.(Map.get(pattern, :s))
-    p_var_name_in_pattern = get_var_name.(Map.get(pattern, :p))
-    o_var_name_in_pattern = get_var_name.(Map.get(pattern, :o))
+    # Assumes pattern keys are strings "s", "p", "o"
+    s_var_name_in_pattern = get_var_name.(Map.get(pattern, "s"))
+    p_var_name_in_pattern = get_var_name.(Map.get(pattern, "p"))
+    o_var_name_in_pattern = get_var_name.(Map.get(pattern, "o"))
 
     # Start with the current solution
     Enum.reduce_while(new_triple_bindings, current_solution, fn {key_from_triple, value_from_triple}, acc ->
