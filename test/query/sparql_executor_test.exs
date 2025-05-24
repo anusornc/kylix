@@ -6,7 +6,14 @@ defmodule Kylix.Query.SparqlExecutorTest do
   # This restructured test avoids directly testing private functions
 
   setup do
-    # Set up DAGEngine for testing if needed
+    # Ensure a clean state by stopping and starting the application
+    :ok = Application.stop(:kylix)
+    {:ok, _} = Application.ensure_all_started(:kylix)
+
+    # Now it's safe to interact with DAGEngine
+    # The check `if function_exported?(DAGEngine, :clear_all, 0)` is redundant 
+    # if we assume DAGEngine is part of :kylix app and correctly started.
+    # However, keeping it doesn't hurt.
     if function_exported?(DAGEngine, :clear_all, 0) do
       DAGEngine.clear_all()
       setup_test_data()

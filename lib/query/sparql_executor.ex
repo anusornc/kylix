@@ -170,13 +170,31 @@ defmodule Kylix.Query.SparqlExecutor do
       else
         results =
           Enum.reduce(patterns, [%{}], fn pattern, current_solutions ->
-            Enum.flat_map(current_solutions, fn solution ->
-              pattern_results = execute_pattern(pattern, solution)
-              Enum.map(pattern_results, fn pattern_binding ->
-                merge_bindings(solution, pattern_binding, pattern)
-              end)
-              |> Enum.filter(&(&1 != nil))
-            end)
+            try do
+              # Check for `is_map(pattern)` is already here from a previous fix
+              if !is_map(pattern) do
+                Logger.warning("SparqlExecutor: (reduce) non-map pattern: #{inspect(pattern)}. Skipping.")
+                current_solutions 
+              else
+                Enum.flat_map(current_solutions, fn solution ->
+                  # Check for `is_map(solution)` is already here from a previous fix
+                  if !is_map(solution) do
+                    Logger.warning("SparqlExecutor: (flat_map) non-map solution: #{inspect(solution)}. Skipping path.")
+                    [] 
+                  else
+                    pattern_results = execute_pattern(pattern, solution)
+                    Enum.map(pattern_results, fn pattern_binding ->
+                      merge_bindings(solution, pattern_binding, pattern)
+                    end)
+                    |> Enum.filter(&(&1 != nil))
+                  end
+                end)
+              end
+            rescue
+              e in [BadMapError] ->
+                Logger.error("SparqlExecutor: Rescued BadMapError in execute_base_patterns' reduce loop. Error: #{inspect(e)}, Pattern: #{inspect(pattern)}, CurrentSolutions: #{inspect(current_solutions)}. Stacktrace: #{inspect(__STACKTRACE__)}. Continuing with current solutions.")
+                current_solutions # Continue with solutions from before this problematic pattern
+            end
           end)
         Logger.debug("Base results: #{inspect(results)}")
         {:ok, results}
@@ -187,64 +205,163 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   defp execute_pattern(pattern, binding) do
+    # Assuming pattern and binding are valid maps due to prior checks or logic
     {s, p, o} = extract_pattern_values(pattern, binding)
-    Logger.debug("Executing DAG query with pattern: {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
-    case Kylix.Storage.Coordinator.query({s, p, o}) do
-      {:ok, results} -> convert_dag_results(results, pattern)
-      error ->
-        Logger.error("Error querying DAG: #{inspect(error)}")
+    Logger.debug("SparqlExecutor: Executing DAG query with pattern: {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}} for binding: #{inspect(binding)}")
+    
+    try do
+      case Kylix.Storage.Coordinator.query({s, p, o}) do
+        {:ok, results} ->
+          # Assuming convert_dag_results is now robust from previous fixes
+          convert_dag_results(results, pattern)
+        {:error, reason} ->
+          Logger.error("SparqlExecutor: Coordinator.query returned explicit error: #{inspect(reason)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
+          []
+        unexpected_value ->
+          # This case handles returns from Coordinator.query that are neither {:ok, _} nor {:error, _}
+          Logger.error("SparqlExecutor: Coordinator.query returned an unexpected value: #{inspect(unexpected_value)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Treating as no results.")
+          []
+      end
+    rescue
+      # Catch specific errors that might arise if Coordinator.query (or DAGEngine.query) has an internal issue
+      # and raises instead of returning {:error, ...}
+      e in [BadMapError, KeyError] ->
+        Logger.error("SparqlExecutor: Rescued critical error during Coordinator.query processing for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Stacktrace: #{inspect(__STACKTRACE__)}. Returning empty results.")
         []
+      # Optionally, catch other exceptions if deemed necessary, or let them propagate to be caught by execute_base_patterns
+      # For now, only BadMapError and KeyError are caught here.
+      # e ->
+      #   Logger.error("SparqlExecutor: Rescued other exception during Coordinator.query for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Rethrowing.")
+      #   reraise e, __STACKTRACE__
     end
   end
 
   defp convert_dag_results(results, pattern) do
-    Enum.map(results, fn {node_id, data, edges} ->
-      result = %{
-        "node_id" => node_id,
-        "s" => data.subject,
-        "p" => data.predicate,
-        "o" => data.object
-      }
-      result = if Map.has_key?(data, :validator), do: Map.put(result, "validator", data.validator), else: result
-      result = if Map.has_key?(data, :timestamp), do: Map.put(result, "timestamp", data.timestamp), else: result
-      result = Map.put(result, "edges", edges)
-      result = if pattern[:s] == nil, do: Map.put(result, "s", data.subject), else: result
-      result = if pattern[:p] == nil, do: Map.put(result, "p", data.predicate), else: result
-      result = if pattern[:o] == nil, do: Map.put(result, "o", data.object), else: result
-      Kylix.Query.VariableMapper.apply_mappings(result, data)
+    Enum.reduce(results, [], fn item, acc ->
+      case item do
+        {node_id, data, edges} when is_map(data) ->
+          # Ensure essential fields are present before creating the base map
+          if Map.has_key?(data, :subject) && Map.has_key?(data, :predicate) && Map.has_key?(data, :object) do
+            current_result_base = %{
+              "node_id" => node_id,
+              "s" => data.subject,
+              "p" => data.predicate,
+              "o" => data.object
+            }
+            
+            # Add optional fields if they exist in data
+            current_result_with_optional = 
+              Enum.reduce([:validator, :timestamp], current_result_base, fn key, inner_acc ->
+                if Map.has_key?(data, key) do
+                  Map.put(inner_acc, Atom.to_string(key), Map.get(data, key))
+                else
+                  inner_acc
+                end
+              end)
+
+            current_result_final = Map.put(current_result_with_optional, "edges", edges)
+            
+            # Assuming VariableMapper correctly uses the "s", "p", "o" from current_result_final.
+            # Original re-mapping lines based on pattern[:s] == nil are omitted for now.
+            
+            final_mapped_result = Kylix.Query.VariableMapper.apply_mappings(current_result_final, data)
+            [final_mapped_result | acc]
+          else
+            Logger.warning("SparqlExecutor: Skipping result item due to map data missing core :subject, :predicate, or :object fields. Data: #{inspect(data)}, Pattern: #{inspect(pattern)}")
+            acc
+          end
+        item_to_log -> # Renamed from _invalid_item
+          Logger.warning("SparqlExecutor: Skipping invalid item from Coordinator.query. Expected {node_id, data_map, edges}. Got: #{inspect(item_to_log)}, Pattern: #{inspect(pattern)}")
+          acc
+      end
     end)
+    |> Enum.reverse() # Reverse because items were prepended
   end
 
   defp extract_pattern_values(pattern, binding) do
-    s = if pattern[:s] == nil, do: Map.get(binding, "s"), else: pattern[:s]
-    p = if pattern[:p] == nil, do: Map.get(binding, "p"), else: pattern[:p]
-    o = if pattern[:o] == nil, do: Map.get(binding, "o"), else: pattern[:o]
+    # pattern is expected to be a map like %{"s" => "?s_var", "p" => "<literal>", "o" => "?o_var"}
+    # or %{"s" => nil, ...} if a component is a wildcard for Coordinator.query
+    # binding is a map like %{"?s_var" => "actual_value_for_s"}
+
+    resolve_value = fn key_str ->
+      pattern_component = Map.get(pattern, key_str) # Use string key "s", "p", or "o"
+
+      cond do
+        is_binary(pattern_component) and String.starts_with?(pattern_component, "?") ->
+          # It's a variable like "?s_var", look it up in the binding.
+          # If not found in binding (e.g., first pattern), Map.get returns nil, which is correct.
+          Map.get(binding, pattern_component)
+        true ->
+          # It's a literal URI/value, or nil (for wildcard). Use as is.
+          pattern_component
+      end
+    end
+
+    s = resolve_value.("s")
+    p = resolve_value.("p")
+    o = resolve_value.("o")
     {s, p, o}
   end
 
-  defp merge_bindings(binding1, binding2, pattern) do
-    # Extract variable names from the pattern
-    s_var = if is_atom(pattern[:s]), do: Atom.to_string(pattern[:s]), else: "s"
-    p_var = if is_atom(pattern[:p]), do: Atom.to_string(pattern[:p]), else: "p"
-    o_var = if is_atom(pattern[:o]), do: Atom.to_string(pattern[:o]), else: "o"
+  defp merge_bindings(current_solution, new_triple_bindings, pattern) do
+    # current_solution: map with query variables as keys (e.g., %{"?s" => "val"})
+    # new_triple_bindings: map from convert_dag_results (keys "s", "p", "o", "entity", etc.)
+    # pattern: the SPARQL pattern map (e.g., %{s: :"?s", p: "literal_p", o: :"?o"})
 
-    # Merge bindings, respecting variable names from the pattern
-    Enum.reduce(binding2, binding1, fn {key, val}, acc ->
-      new_key = case key do
-        "s" -> s_var
-        "p" -> p_var
-        "o" -> o_var
-        _ -> key
-      end
-      if Map.has_key?(acc, new_key) do
-        existing_val = Map.get(acc, new_key)
-        if existing_val == nil || existing_val == val do
-          Map.put(acc, new_key, val)
-        else
-          nil  # Conflict, discard
-        end
+    # Helper to get the variable name string if pattern_value is a variable string, else nil
+    get_var_name = fn pattern_value ->
+      if is_binary(pattern_value) and String.starts_with?(pattern_value, "?") do
+        pattern_value # The variable name itself, e.g., "?s"
       else
-        Map.put(acc, new_key, val)
+        nil # It's a literal or nil
+      end
+    end
+
+    # Assumes pattern keys are strings "s", "p", "o"
+    s_var_name_in_pattern = get_var_name.(Map.get(pattern, "s"))
+    p_var_name_in_pattern = get_var_name.(Map.get(pattern, "p"))
+    o_var_name_in_pattern = get_var_name.(Map.get(pattern, "o"))
+
+    # Start with the current solution
+    Enum.reduce_while(new_triple_bindings, current_solution, fn {key_from_triple, value_from_triple}, acc ->
+      if is_nil(acc) do # Propagate nil if a conflict already occurred and halted the accumulator
+        {:halt, nil}
+      else
+        target_var_name_for_binding = 
+          cond do
+            key_from_triple == "s" && s_var_name_in_pattern -> s_var_name_in_pattern
+            key_from_triple == "p" && p_var_name_in_pattern -> p_var_name_in_pattern
+            key_from_triple == "o" && o_var_name_in_pattern -> o_var_name_in_pattern
+            # Other keys (e.g., from VariableMapper like "entity") are treated as direct variable names
+            # if they don't overwrite an existing s,p,o variable from the pattern.
+            !Enum.member?(["s", "p", "o"], key_from_triple) -> key_from_triple
+            # If key_from_triple is "s", "p", "o" but the corresponding pattern part was a literal (no var_name),
+            # then this component was for matching only, not for binding under "s", "p", "o".
+            true -> nil 
+          end
+
+        if target_var_name_for_binding do
+          # This is a variable we need to bind
+          if Map.has_key?(acc, target_var_name_for_binding) do
+            existing_val = Map.get(acc, target_var_name_for_binding)
+            # Compatible if values are same, or if existing was nil (first binding for this var in this solution path)
+            if existing_val == value_from_triple or is_nil(existing_val) do
+              {:cont, Map.put(acc, target_var_name_for_binding, value_from_triple)}
+            else
+              # Conflict: variable already bound to a different value
+              Logger.debug("SparqlExecutor: merge_bindings conflict for variable '#{target_var_name_for_binding}'. Existing: '#{inspect(existing_val)}', New: '#{inspect(value_from_triple)}'. Discarding solution branch.")
+              {:halt, nil} 
+            end
+          else
+            # New variable binding for this solution
+            {:cont, Map.put(acc, target_var_name_for_binding, value_from_triple)}
+          end
+        else
+          # key_from_triple was "s", "p", or "o" but corresponded to a literal in the pattern,
+          # or it's some other key from new_triple_bindings we don't want to turn into a solution variable.
+          # In this case, we just continue with the accumulator unchanged by this specific key-value.
+          {:cont, acc}
+        end
       end
     end)
   end

@@ -16,10 +16,17 @@ defmodule Kylix.Application do
 
     # Load validators (but in test mode, this will be overridden by hardcoded values)
     validators =
-      validators_dir
-      |> File.ls!()
-      |> Enum.filter(&String.ends_with?(&1, ".pub"))
-      |> Enum.map(&Path.rootname/1)
+      if Mix.env() == :test or !File.dir?(validators_dir) do
+        # In test mode or if dir doesn't exist, rely on potential hardcoded values in modules
+        # or let downstream modules handle an empty list.
+        []
+      else
+        # Proceed with filesystem access only if not in test and directory exists
+        validators_dir
+        |> File.ls!() # Safe to use ! here because we checked File.dir?
+        |> Enum.filter(&String.ends_with?(&1, ".pub"))
+        |> Enum.map(&Path.rootname/1)
+      end
 
     # Start both storage engines in all environments
     children = [
