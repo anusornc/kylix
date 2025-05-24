@@ -533,24 +533,48 @@ defmodule Kylix.Query.SparqlExecutor do
     {:ok, projected}
   end
 
-  defp create_projection(binding, variables, query_structure) do
-    var_positions = Map.get(query_structure, :variable_positions, %{})
-    Enum.reduce(variables, %{}, fn var, proj ->
-      cond do
-        Map.has_key?(binding, var) -> Map.put(proj, var, Map.get(binding, var))
-        Map.has_key?(var_positions, var) ->
-          position = Map.get(var_positions, var)
-          value = case position do
-            "s" -> Map.get(binding, "s")
-            "p" -> Map.get(binding, "p")
-            "o" -> Map.get(binding, "o")
-            _ -> nil
-          end
-          Map.put(proj, var, value)
-        true ->
-          value = Map.get(binding, "s") || Map.get(binding, "o") || Map.get(binding, var)
-          Map.put(proj, var, value)
-      end
+  defp create_projection(binding, variables_in_select, query_structure) do
+    # var_positions might be useful if populated by SparqlEngine using VariableMapper.extract_variable_positions
+    # For now, let's assume variables_in_select are like "?var"
+    # and binding contains results from merge_bindings which should have keys like "?var" and also "role" names.
+    _var_positions = Map.get(query_structure, :variable_positions, %{}) # Keep if needed later, suppress warning for now
+
+    Enum.reduce(variables_in_select, %{}, fn var_with_q_mark, projected_map ->
+      # Default projected key is the variable name without '?'
+      proj_key = String.trim_leading(var_with_q_mark, "?")
+      
+      # Find the value for this variable from the binding information
+      value = 
+        cond do
+          # 1. Best case: binding has the full variable name (e.g., "?entity")
+          Map.has_key?(binding, var_with_q_mark) ->
+            Map.get(binding, var_with_q_mark)
+          
+          # 2. Next best: binding has the base variable name (e.g., "entity")
+          #    This covers cases where VariableMapper added role names that match SELECT vars.
+          Map.has_key?(binding, proj_key) ->
+            Map.get(binding, proj_key)
+            
+          # 3. Fallback: check if it's a standard position "s", "p", "o" if proj_key matches.
+          #    This is less likely if VariableMapper and merge_bindings are working well.
+          #    This section might be too aggressive or redundant if VariableMapper/merge_bindings are correct.
+          #    For example, if SELECT has "?s", proj_key will be "s".
+          #    If binding has {"?s" => val_from_var_s, "s" => val_from_raw_s}, this logic needs care.
+          #    The primary source should be the variable name binding.
+          #    Let's simplify this fallback or ensure it doesn't clash.
+          #    If proj_key is "s" and s_var_name_in_pattern from merge_bindings was different,
+          #    then binding["s"] might be raw data, not the variable's value.
+          #    Given current merge_bindings, binding keys are already the correct variable names.
+          #    So steps 1 and 2 should be sufficient if merge_bindings correctly uses pattern variables.
+          #    The original code had a fallback to "s", "p", "o" based on var_positions,
+          #    which is not directly used here in the same way.
+
+          # Simplified fallback logic: If not found by full or base name, it's nil.
+          # The s/p/o fallback is removed as merge_bindings should place values under their correct variable names.
+          true -> nil
+        end
+        
+      Map.put(projected_map, proj_key, value)
     end)
   end
 end
