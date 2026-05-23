@@ -400,25 +400,20 @@ defmodule Kylix.Server.TransactionQueue do
 
   # Find and remove a transaction from the queue by its reference
   defp find_and_remove_from_queue(queue, ref) do
-    # Convert queue to list for easier manipulation
-    queue_list = :queue.to_list(queue)
+    do_find_and_remove(queue, ref, :queue.new())
+  end
 
-    # Find the transaction with matching ref
-    case Enum.find_index(queue_list, fn tx -> tx.ref == ref end) do
-      nil ->
-        {nil, queue}
+  defp do_find_and_remove(queue, ref, acc) do
+    case :queue.out(queue) do
+      {{:value, tx}, rest} ->
+        if tx.ref == ref do
+          {tx, :queue.join(acc, rest)}
+        else
+          do_find_and_remove(rest, ref, :queue.in(tx, acc))
+        end
 
-      index ->
-        # Get the transaction
-        tx_data = Enum.at(queue_list, index)
-
-        # Remove it from the list
-        new_list = List.delete_at(queue_list, index)
-
-        # Convert back to queue
-        new_queue = :queue.from_list(new_list)
-
-        {tx_data, new_queue}
+      {:empty, _} ->
+        {nil, acc}
     end
   end
 
