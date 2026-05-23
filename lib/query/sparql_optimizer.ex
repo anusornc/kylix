@@ -54,7 +54,8 @@ defmodule Kylix.Query.SparqlOptimizer do
     |> post_traverse({:to_triple, []})
 
   # Simplified parser: Single triple pattern and optional filter
-  defparsec :parse_sparql,
+  defparsec(
+    :parse_sparql,
     ignore(string("SELECT"))
     |> ignore(whitespace)
     |> repeat(variable |> ignore(whitespace))
@@ -76,14 +77,17 @@ defmodule Kylix.Query.SparqlOptimizer do
     |> ignore(whitespace)
     |> ignore(string("}")),
     debug: false
+  )
 
   # Parser helpers
   defp to_uri(_rest, args, context, _line, _offset) do
-    uri = case args do
-      ["<", uri, ">"] -> uri
-      [@prov_prefix, suffix] -> "#{@prov_ns}#{suffix}"
-      _ -> raise "Invalid URI format"
-    end
+    uri =
+      case args do
+        ["<", uri, ">"] -> uri
+        [@prov_prefix, suffix] -> "#{@prov_ns}#{suffix}"
+        _ -> raise "Invalid URI format"
+      end
+
     {[uri], context}
   end
 
@@ -99,11 +103,20 @@ defmodule Kylix.Query.SparqlOptimizer do
 
   defp normalize_term(term) do
     cond do
-      String.starts_with?(term, "?") -> term
-      String.starts_with?(term, "<") -> String.trim(term, "<>")
-      String.starts_with?(term, @prov_prefix) -> "#{@prov_ns}#{String.trim_leading(term, @prov_prefix)}"
-      String.starts_with?(term, @prov_ns) -> term
-      true -> term
+      String.starts_with?(term, "?") ->
+        term
+
+      String.starts_with?(term, "<") ->
+        String.trim(term, "<>")
+
+      String.starts_with?(term, @prov_prefix) ->
+        "#{@prov_ns}#{String.trim_leading(term, @prov_prefix)}"
+
+      String.starts_with?(term, @prov_ns) ->
+        term
+
+      true ->
+        term
     end
   end
 
@@ -201,6 +214,7 @@ defmodule Kylix.Query.SparqlOptimizer do
     {new_patterns, remaining_filters} =
       Enum.reduce(query.patterns, {[], filters}, fn pattern, {acc, filters_left} ->
         pattern_vars = pattern_variables(pattern)
+
         {applicable, others} =
           Enum.split_with(filters_left, fn filter ->
             Enum.all?(filter_variables(filter), &(&1 in pattern_vars))
@@ -210,10 +224,12 @@ defmodule Kylix.Query.SparqlOptimizer do
         {[pattern_with_filters | acc], others}
       end)
 
-    %{query |
-      patterns: Enum.map(new_patterns, & &1.pattern),
-      pattern_filters: Enum.reverse(new_patterns),
-      filters: remaining_filters}
+    %{
+      query
+      | patterns: Enum.map(new_patterns, & &1.pattern),
+        pattern_filters: Enum.reverse(new_patterns),
+        filters: remaining_filters
+    }
   end
 
   # Extracts variables from a triple pattern
@@ -290,9 +306,9 @@ defmodule Kylix.Query.SparqlOptimizer do
         }
 
         %{
-          plan |
-          steps: [step | plan.steps],
-          estimated_cost: plan.estimated_cost + step.estimated_cardinality
+          plan
+          | steps: [step | plan.steps],
+            estimated_cost: plan.estimated_cost + step.estimated_cardinality
         }
       end)
 
@@ -304,9 +320,9 @@ defmodule Kylix.Query.SparqlOptimizer do
       }
 
       %{
-        plan |
-        steps: [step | plan.steps],
-        estimated_cost: plan.estimated_cost * step.estimated_selectivity
+        plan
+        | steps: [step | plan.steps],
+          estimated_cost: plan.estimated_cost * step.estimated_selectivity
       }
     end)
     |> Map.update!(:steps, &Enum.reverse/1)

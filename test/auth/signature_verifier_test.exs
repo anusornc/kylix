@@ -29,13 +29,17 @@ defmodule Kylix.Auth.SignatureVerifierTest do
       timestamp = DateTime.from_iso8601("2023-01-01T12:00:00Z") |> elem(1)
 
       # Act
-      hash1 = SignatureVerifier.hash_transaction(subject, predicate, object, validator_id, timestamp)
-      hash2 = SignatureVerifier.hash_transaction(subject, predicate, object, validator_id, timestamp)
+      hash1 =
+        SignatureVerifier.hash_transaction(subject, predicate, object, validator_id, timestamp)
+
+      hash2 =
+        SignatureVerifier.hash_transaction(subject, predicate, object, validator_id, timestamp)
 
       # Assert
       assert hash1 == hash2
       assert is_binary(hash1)
-      assert byte_size(hash1) == 32  # SHA-256 produces 32 bytes
+      # SHA-256 produces 32 bytes
+      assert byte_size(hash1) == 32
     end
 
     test "produces different hashes for different inputs" do
@@ -46,11 +50,22 @@ defmodule Kylix.Auth.SignatureVerifierTest do
       hash1 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator1", timestamp)
       hash2 = SignatureVerifier.hash_transaction("Bob", "knows", "Bob", "validator1", timestamp)
       hash3 = SignatureVerifier.hash_transaction("Alice", "likes", "Bob", "validator1", timestamp)
-      hash4 = SignatureVerifier.hash_transaction("Alice", "knows", "Charlie", "validator1", timestamp)
+
+      hash4 =
+        SignatureVerifier.hash_transaction("Alice", "knows", "Charlie", "validator1", timestamp)
+
       hash5 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator2", timestamp)
 
       different_timestamp = DateTime.from_iso8601("2023-01-01T12:00:01Z") |> elem(1)
-      hash6 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator1", different_timestamp)
+
+      hash6 =
+        SignatureVerifier.hash_transaction(
+          "Alice",
+          "knows",
+          "Bob",
+          "validator1",
+          different_timestamp
+        )
 
       # Assert all hashes are different
       hashes = [hash1, hash2, hash3, hash4, hash5, hash6]
@@ -80,8 +95,10 @@ defmodule Kylix.Auth.SignatureVerifierTest do
       # Use an approach that will definitely cause an exception in the verify function
       # We'll pass a malformed key that will cause an error
       data = "test data"
-      signature = <<1, 2, 3>>  # Binary that's not valid as a signature
-      public_key = <<4, 5, 6>> # Binary that's not a valid key
+      # Binary that's not valid as a signature
+      signature = <<1, 2, 3>>
+      # Binary that's not a valid key
+      public_key = <<4, 5, 6>>
 
       # This should cause an exception inside the crypto.verify function
       # but our function should catch it and return a friendly error

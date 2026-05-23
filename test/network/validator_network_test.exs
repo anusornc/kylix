@@ -50,15 +50,17 @@ defmodule Kylix.Network.ValidatorNetworkTest do
       :meck.expect(Kylix.BlockchainServer, :receive_transaction, fn _ -> :ok end)
 
       # Create a transaction message
-      transaction_message = Jason.encode!(%{
-        type: "transaction",
-        data: tx_data,
-        timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-      })
+      transaction_message =
+        Jason.encode!(%{
+          type: "transaction",
+          data: tx_data,
+          timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+        })
 
       # Send the message directly to the process - use a real socket value (like a pid)
       # to avoid the :gen_tcp.send error with References
-      test_socket = pid  # Using the process itself as a "socket" to avoid gen_tcp errors
+      # Using the process itself as a "socket" to avoid gen_tcp errors
+      test_socket = pid
 
       # Send the message
       send(pid, {:tcp, test_socket, transaction_message})
@@ -75,11 +77,12 @@ defmodule Kylix.Network.ValidatorNetworkTest do
 
     test "processes properly formatted messages", %{validator_pid: pid} do
       # Send a properly formatted but unknown type message
-      valid_json_message = Jason.encode!(%{
-        type: "unknown_type",
-        data: "test data",
-        timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-      })
+      valid_json_message =
+        Jason.encode!(%{
+          type: "unknown_type",
+          data: "test data",
+          timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+        })
 
       # The process should handle this without crashing
       send(pid, {:tcp, pid, valid_json_message})

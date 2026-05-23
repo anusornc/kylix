@@ -13,4 +13,5 @@ config :logger, level: :info
 # Additional production settings
 config :kylix, :performance,
   cache_size: 1000,
-  checkpoint_interval: 3600  # in seconds
+  # in seconds
+  checkpoint_interval: 3600
