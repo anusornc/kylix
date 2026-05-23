@@ -23,38 +23,42 @@ defmodule Kylix.Application do
       else
         # Proceed with filesystem access only if not in test and directory exists
         validators_dir
-        |> File.ls!() # Safe to use ! here because we checked File.dir?
+        # Safe to use ! here because we checked File.dir?
+        |> File.ls!()
         |> Enum.filter(&String.ends_with?(&1, ".pub"))
         |> Enum.map(&Path.rootname/1)
       end
 
     # Start both storage engines in all environments
-    children = [
-      # Storage engines
-      {Kylix.Storage.DAGEngine, []},
-      if Mix.env() != :test do
-        {Kylix.Storage.PersistentDAGEngine, [db_path: db_path]}
-      end,
+    children =
+      [
+        # Storage engines
+        {Kylix.Storage.DAGEngine, []},
+        if Mix.env() != :test do
+          {Kylix.Storage.PersistentDAGEngine, [db_path: db_path]}
+        end,
 
-      # Start the ValidatorCoordinator BEFORE the BlockchainServer
-      {Kylix.Consensus.ValidatorCoordinator, [validators: validators, config_dir: validators_dir]},
+        # Start the ValidatorCoordinator BEFORE the BlockchainServer
+        {Kylix.Consensus.ValidatorCoordinator,
+         [validators: validators, config_dir: validators_dir]},
 
-      # Common services across all environments
-      {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},
-      {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]},
+        # Common services across all environments
+        {Kylix.BlockchainServer, [validators: validators, config_dir: validators_dir]},
+        {Kylix.Network.ValidatorNetwork, [port: port, node_id: node_id]},
 
-      # Add the transaction queue
-      {Kylix.Server.TransactionQueue, []},
+        # Add the transaction queue
+        {Kylix.Server.TransactionQueue, []},
 
-      # Start the CacheSyncJob for periodic cache synchronization
-      {Kylix.Storage.CacheSyncJob, []},
+        # Start the CacheSyncJob for periodic cache synchronization
+        {Kylix.Storage.CacheSyncJob, []},
 
-      # Start the API server (but not in test mode)
-      if Mix.env() != :test do
-        {Kylix.API.Server, [port: api_port]}
-      end
-    ]
-    |> Enum.filter(&(&1 != nil)) # Filter out nil entries from the if condition
+        # Start the API server (but not in test mode)
+        if Mix.env() != :test do
+          {Kylix.API.Server, [port: api_port]}
+        end
+      ]
+      # Filter out nil entries from the if condition
+      |> Enum.filter(&(&1 != nil))
 
     # Initialize the query cache
     Kylix.Storage.Coordinator.init_cache()
