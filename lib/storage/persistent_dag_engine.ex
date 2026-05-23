@@ -292,7 +292,7 @@ defmodule Kylix.Storage.PersistentDAGEngine do
       if File.exists?(nodes_dir) && File.dir?(nodes_dir) do
         nodes_dir
         |> File.ls!()
-        |> Enum.map(fn file ->
+        |> Task.async_stream(fn file ->
           node_id = Path.rootname(file)
 
           if Map.has_key?(nodes_in_cache, node_id) do
@@ -305,7 +305,8 @@ defmodule Kylix.Storage.PersistentDAGEngine do
 
             {node_id, node_data}
           end
-        end)
+        end, max_concurrency: System.schedulers_online() * 2)
+        |> Enum.map(fn {:ok, result} -> result end)
         |> Map.new()
       else
         %{}
