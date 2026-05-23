@@ -162,9 +162,11 @@ defmodule Kylix.Server.TransactionQueueTest do
     # Check final status
     final_status = TransactionQueue.get_transaction_status(ref)
     assert final_status != nil
+    assert final_status.status == :completed
     assert Map.has_key?(final_status, :result)
     assert final_status.result == {:ok, "test_tx_id"}
     assert Map.has_key?(final_status, :completed_at)
+    assert Map.has_key?(final_status, :submitted_at)
   end
 
   # Test that transactions are processed asynchronously with real keys

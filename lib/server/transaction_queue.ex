@@ -362,10 +362,13 @@ defmodule Kylix.Server.TransactionQueue do
     Logger.info("Received transaction result for ref #{inspect(ref)}: #{inspect(result)}")
 
     # Update transaction status for this specific reference
-    updated_statuses = Map.put(state.transaction_statuses, ref, %{
+    existing_status = Map.get(state.transaction_statuses, ref, %{})
+
+    updated_statuses = Map.put(state.transaction_statuses, ref, existing_status |> Map.merge(%{
+      status: :completed,
       result: result,
       completed_at: now
-    })
+    }))
 
     # Update stats based on result
     new_stats = case result do
@@ -476,10 +479,12 @@ defmodule Kylix.Server.TransactionQueue do
 
           # Update transaction status directly
           now = DateTime.utc_now()
-          updated_statuses = Map.put(current_state.transaction_statuses, ref, %{
+          existing_status = Map.get(current_state.transaction_statuses, ref, %{})
+          updated_statuses = Map.put(current_state.transaction_statuses, ref, existing_status |> Map.merge(%{
+            status: :completed,
             result: result,
             completed_at: now
-          })
+          }))
 
           # Update stats based on result
           new_stats = case result do
