@@ -321,14 +321,11 @@ defmodule Kylix.Query.SparqlParser do
   Parses a SPARQL query string into a structured query representation.
   """
   def parse(query) do
-    IO.inspect(query, label: "Raw query input to parser")
     try do
       normalized_query = normalize_query(query)
       Logger.debug("Parsing query: #{normalized_query}")
       case parse_query(normalized_query) do
         {:ok, parsed, "", _, _, _} ->
-          IO.inspect(parsed, label: "Parsed before conversion")
-          IO.inspect(parsed, label: "Parsed")
           query_structure = convert_to_query_structure(parsed)
           {:ok, query_structure}
 
