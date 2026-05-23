@@ -258,6 +258,8 @@ defmodule Kylix.Server.TransactionQueue do
 
   @impl true
   def handle_call(:status, _from, state) do
+    {pending_count, completed_count} = count_transaction_statuses(state.transaction_statuses)
+
     status = %{
       queue_length: :queue.len(state.queue),
       processing: state.processing,
@@ -268,8 +270,8 @@ defmodule Kylix.Server.TransactionQueue do
       stats: state.stats,
       # Add transaction tracking information
       transaction_count: map_size(state.transaction_statuses),
-      pending_count: count_pending_transactions(state.transaction_statuses),
-      completed_count: count_completed_transactions(state.transaction_statuses)
+      pending_count: pending_count,
+      completed_count: completed_count
     }
 
     {:reply, status, state}
@@ -422,17 +424,12 @@ defmodule Kylix.Server.TransactionQueue do
     end
   end
 
-  # Count transactions in pending state
-  defp count_pending_transactions(transaction_statuses) do
-    Enum.count(transaction_statuses, fn {_ref, status} ->
-      Map.get(status, :status) == :pending
-    end)
-  end
-
-  # Count transactions that have completed (have a result)
-  defp count_completed_transactions(transaction_statuses) do
-    Enum.count(transaction_statuses, fn {_ref, status} ->
-      Map.has_key?(status, :result)
+  # Count transactions in pending and completed states in a single pass
+  defp count_transaction_statuses(transaction_statuses) do
+    Enum.reduce(transaction_statuses, {0, 0}, fn {_ref, status}, {pending, completed} ->
+      is_pending = if Map.get(status, :status) == :pending, do: 1, else: 0
+      is_completed = if Map.has_key?(status, :result), do: 1, else: 0
+      {pending + is_pending, completed + is_completed}
     end)
   end
 
