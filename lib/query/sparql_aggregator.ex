@@ -221,76 +221,94 @@ defmodule Kylix.Query.SparqlAggregator do
       # No aggregations to apply
       results
     else
-      # Group results if needed
-      grouped_results = if Enum.empty?(group_by) do
-        # No GROUP BY, treat all results as one group
-        [{"__all__", results}]
-      else
-        # Group by the specified variables
-        groups = Enum.group_by(results, fn result ->
-          Enum.map(group_by, fn var ->
-            # Use variable positions to get the correct value
-            position = Map.get(var_positions, var)
-            value = case position do
-              "s" -> Map.get(result, "s")
-              "p" -> Map.get(result, "p")
-              "o" -> Map.get(result, "o")
-              _ -> Map.get(result, var)  # Fall back to direct lookup
-            end
-            value || Map.get(result, var)  # Additional fallback
-          end)
-        end)
-
-        # Debug grouped results
-        Logger.debug("Grouped results: #{inspect(groups)}")
-        Map.to_list(groups)
-      end
-
-      # Apply aggregations to each group
-      aggregated = Enum.map(grouped_results, fn {group_key, group_results} ->
-        # Start with a result containing the group_by values
-        base_result = if group_key == "__all__" do
-          %{}
-        else
-          if is_list(group_key) do
-            Enum.zip(group_by, group_key)
-            |> Enum.into(%{})
-          else
-            %{Enum.at(group_by, 0) => group_key}
-          end
-        end
-
-        # Add each aggregate result to the base result
-        Enum.reduce(aggregates, base_result, fn agg, result ->
-          # Use variable position for the aggregate variable if available
-          agg_variable = agg.variable
-          position = Map.get(var_positions, agg_variable)
-
-          # If we have a position mapping, update the aggregate to use the right field
-          updated_agg = if position do
-            field = case position do
-              "s" -> "s"
-              "p" -> "p"
-              "o" -> "o"
-              _ -> agg_variable
-            end
-            Map.put(agg, :field, field)
-          else
-            agg
-          end
-
-          agg_value = compute_aggregate(updated_agg, group_results)
-
-          # Store the aggregate value both in the alias name and in a special key
-          result
-          |> Map.put(agg.alias, agg_value)
-          |> Map.put("count_#{agg.variable}", agg_value)
-        end)
-      end)
+      grouped_results = group_results(results, group_by, var_positions)
+      aggregated = apply_aggregations_to_groups(grouped_results, aggregates, group_by, var_positions)
 
       # Debug the final aggregated results
       Logger.debug("Aggregated results: #{inspect(aggregated)}")
       aggregated
+    end
+  end
+
+  defp group_results(results, group_by, var_positions) do
+    if Enum.empty?(group_by) do
+      # No GROUP BY, treat all results as one group
+      [{"__all__", results}]
+    else
+      # Group by the specified variables
+      groups =
+        Enum.group_by(results, fn result ->
+          Enum.map(group_by, fn var ->
+            get_variable_value(result, var, var_positions)
+          end)
+        end)
+
+      # Debug grouped results
+      Logger.debug("Grouped results: #{inspect(groups)}")
+      Map.to_list(groups)
+    end
+  end
+
+  defp get_variable_value(result, var, var_positions) do
+    # Use variable positions to get the correct value
+    position = Map.get(var_positions, var)
+
+    value =
+      case position do
+        "s" -> Map.get(result, "s")
+        "p" -> Map.get(result, "p")
+        "o" -> Map.get(result, "o")
+        _ -> Map.get(result, var) # Fall back to direct lookup
+      end
+
+    value || Map.get(result, var) # Additional fallback
+  end
+
+  defp apply_aggregations_to_groups(grouped_results, aggregates, group_by, var_positions) do
+    Enum.map(grouped_results, fn {group_key, group_results} ->
+      base_result = build_base_result(group_key, group_by)
+
+      # Add each aggregate result to the base result
+      Enum.reduce(aggregates, base_result, fn agg, result ->
+        updated_agg = update_aggregate_field(agg, var_positions)
+        agg_value = compute_aggregate(updated_agg, group_results)
+
+        # Store the aggregate value both in the alias name and in a special key
+        result
+        |> Map.put(agg.alias, agg_value)
+        |> Map.put("count_#{agg.variable}", agg_value)
+      end)
+    end)
+  end
+
+  defp build_base_result("__all__", _group_by), do: %{}
+
+  defp build_base_result(group_key, group_by) when is_list(group_key) do
+    Enum.zip(group_by, group_key)
+    |> Enum.into(%{})
+  end
+
+  defp build_base_result(group_key, group_by) do
+    %{Enum.at(group_by, 0) => group_key}
+  end
+
+  defp update_aggregate_field(agg, var_positions) do
+    agg_variable = agg.variable
+    position = Map.get(var_positions, agg_variable)
+
+    # If we have a position mapping, update the aggregate to use the right field
+    if position do
+      field =
+        case position do
+          "s" -> "s"
+          "p" -> "p"
+          "o" -> "o"
+          _ -> agg_variable
+        end
+
+      Map.put(agg, :field, field)
+    else
+      agg
     end
   end
 
