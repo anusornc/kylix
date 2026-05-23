@@ -33,32 +33,24 @@ defmodule Kylix.Query.VariableMapper do
     # PROV-O specific predicate mappings - predicate name to role mappings
     "prov:wasGeneratedBy" => %{subject: "entity", object: "activity"},
     "wasGeneratedBy" => %{subject: "entity", object: "activity"},
-
     "prov:wasAttributedTo" => %{subject: "entity", object: "agent"},
     "wasAttributedTo" => %{subject: "entity", object: "agent"},
-
     "prov:wasDerivedFrom" => %{subject: "derivedEntity", object: "sourceEntity"},
     "wasDerivedFrom" => %{subject: "derivedEntity", object: "sourceEntity"},
-
     "prov:wasInformedBy" => %{subject: "informed", object: "informant"},
     "wasInformedBy" => %{subject: "informed", object: "informant"},
-
     "prov:actedOnBehalfOf" => %{subject: "delegate", object: "responsible"},
     "actedOnBehalfOf" => %{subject: "delegate", object: "responsible"},
-
     "prov:wasAssociatedWith" => %{subject: "activity", object: "agent"},
     "wasAssociatedWith" => %{subject: "activity", object: "agent"},
-
     "prov:used" => %{subject: "activity", object: "entity"},
     "used" => %{subject: "activity", object: "entity"},
 
     # Additional PROV-O relationships
     "prov:wasStartedBy" => %{subject: "activity", object: "entity"},
     "wasStartedBy" => %{subject: "activity", object: "entity"},
-
     "prov:wasEndedBy" => %{subject: "activity", object: "entity"},
     "wasEndedBy" => %{subject: "activity", object: "entity"},
-
     "prov:wasInvalidatedBy" => %{subject: "entity", object: "activity"},
     "wasInvalidatedBy" => %{subject: "entity", object: "activity"}
   }
@@ -120,24 +112,27 @@ defmodule Kylix.Query.VariableMapper do
         # Apply default mappings if they exist
         Map.has_key?(@default_mappings, var) ->
           position = @default_mappings[var]
-          position_str = case position do
-            :subject -> "s"
-            :predicate -> "p"
-            :object -> "o"
-            _ -> nil
-          end
+
+          position_str =
+            case position do
+              :subject -> "s"
+              :predicate -> "p"
+              :object -> "o"
+              _ -> nil
+            end
+
           if position_str, do: Map.put(acc, var, position_str), else: acc
 
         # Try to infer from variable name
         var == "s" || var == "subject" || var == "person" || var == "entity" ||
-        var == "activity" || var == "agent" || String.ends_with?(var, "Entity") ->
+          var == "activity" || var == "agent" || String.ends_with?(var, "Entity") ->
           Map.put(acc, var, "s")
 
         var == "p" || var == "predicate" || var == "relation" ->
           Map.put(acc, var, "p")
 
         var == "o" || var == "object" || var == "target" || var == "friend" ||
-        var == "value" || var == "result" ->
+          var == "value" || var == "result" ->
           Map.put(acc, var, "o")
 
         # Otherwise leave unmapped
@@ -180,33 +175,41 @@ defmodule Kylix.Query.VariableMapper do
 
         # Check for aggregate function result
         var == "count" || String.starts_with?(var, "count_") ->
-          value = Map.get(binding, var) ||
-                  Map.get(binding, "count_#{var}") ||
-                  Map.get(binding, "relationCount") ||
-                  Map.get(binding, "count_target") ||
-                  Map.get(binding, "count_o")
+          value =
+            Map.get(binding, var) ||
+              Map.get(binding, "count_#{var}") ||
+              Map.get(binding, "relationCount") ||
+              Map.get(binding, "count_target") ||
+              Map.get(binding, "count_o")
+
           Map.put(proj, var, value)
 
         # Then check variable positions from query analysis
         Map.has_key?(var_positions, var) ->
           position = Map.get(var_positions, var)
-          value = case position do
-            "s" -> Map.get(binding, "s")
-            "p" -> Map.get(binding, "p")
-            "o" -> Map.get(binding, "o")
-            _ -> nil
-          end
+
+          value =
+            case position do
+              "s" -> Map.get(binding, "s")
+              "p" -> Map.get(binding, "p")
+              "o" -> Map.get(binding, "o")
+              _ -> nil
+            end
+
           Map.put(proj, var, value)
 
         # Try standard mappings as fallback
         Map.has_key?(@default_mappings, var) ->
           position = @default_mappings[var]
-          value = case position do
-            :subject -> Map.get(binding, "s")
-            :predicate -> Map.get(binding, "p")
-            :object -> Map.get(binding, "o")
-            _ -> nil
-          end
+
+          value =
+            case position do
+              :subject -> Map.get(binding, "s")
+              :predicate -> Map.get(binding, "p")
+              :object -> Map.get(binding, "o")
+              _ -> nil
+            end
+
           Map.put(proj, var, value)
 
         # Variable not found - include as nil
@@ -237,10 +240,10 @@ defmodule Kylix.Query.VariableMapper do
   # Apply ontology-aware mappings based on predicate
   defp apply_ontology_mappings(result, data) do
     predicate = Map.get(data, :predicate)
-    if is_nil(predicate), do:
-      result,
-    else:
-      do_apply_predicate_mappings(result, data, predicate)
+
+    if is_nil(predicate),
+      do: result,
+      else: do_apply_predicate_mappings(result, data, predicate)
   end
 
   defp do_apply_predicate_mappings(result, data, predicate) do
@@ -250,11 +253,13 @@ defmodule Kylix.Query.VariableMapper do
         # Try with prov: prefix if it doesn't have one
         if !String.contains?(predicate, ":") do
           case Map.get(@prov_o_mappings, "prov:#{predicate}") do
-            nil -> result  # No mapping found
+            # No mapping found
+            nil -> result
             mappings -> apply_ontology_role_mappings(result, data, mappings)
           end
         else
-          result  # No mapping found for this predicate
+          # No mapping found for this predicate
+          result
         end
 
       mappings ->
@@ -294,20 +299,20 @@ defmodule Kylix.Query.VariableMapper do
 
   # Try to infer entity type from ID prefix and set appropriate variables
   defp infer_type_from_id(result, id, _position, _is_subject) do
-    if is_nil(id) or !is_binary(id), do:
-      result,
-    else:
-      Enum.reduce(@prov_types, result, fn {prefix, roles}, acc ->
-        if String.starts_with?(id, prefix) do
-          # Use the primary role for this entity type regardless of position
-          # In future we could differentiate, but for now use the primary role
-          role = Enum.at(roles, 0)
-          # Add the role variable mapping if we found a matching type
-          if role, do: Map.put(acc, role, id), else: acc
-        else
-          acc
-        end
-      end)
+    if is_nil(id) or !is_binary(id),
+      do: result,
+      else:
+        Enum.reduce(@prov_types, result, fn {prefix, roles}, acc ->
+          if String.starts_with?(id, prefix) do
+            # Use the primary role for this entity type regardless of position
+            # In future we could differentiate, but for now use the primary role
+            role = hd(roles)
+            # Add the role variable mapping if we found a matching type
+            if role, do: Map.put(acc, role, id), else: acc
+          else
+            acc
+          end
+        end)
   end
 
   # Extract PROV-O specific variables from a binding
@@ -315,7 +320,8 @@ defmodule Kylix.Query.VariableMapper do
     predicate = Map.get(binding, "p")
 
     if is_nil(predicate) do
-      %{}  # No predicate to extract mappings from
+      # No predicate to extract mappings from
+      %{}
     else
       # Try to get mappings for this predicate
       case Map.get(@prov_o_mappings, predicate) do
@@ -324,17 +330,19 @@ defmodule Kylix.Query.VariableMapper do
           if !String.contains?(predicate, ":") do
             Map.get(@prov_o_mappings, "prov:#{predicate}", %{})
           else
-            %{}  # No mapping found
+            # No mapping found
+            %{}
           end
 
         mappings ->
           # Convert the role mappings to a map of variable -> value
           Enum.reduce(mappings, %{}, fn {pos, role}, acc ->
-            value = case pos do
-              :subject -> Map.get(binding, "s")
-              :object -> Map.get(binding, "o")
-              _ -> nil
-            end
+            value =
+              case pos do
+                :subject -> Map.get(binding, "s")
+                :object -> Map.get(binding, "o")
+                _ -> nil
+              end
 
             if value, do: Map.put(acc, role, value), else: acc
           end)
