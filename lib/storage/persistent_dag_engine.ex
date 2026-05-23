@@ -118,7 +118,7 @@ defmodule Kylix.Storage.PersistentDAGEngine do
         |> File.ls!()
         # Limit to recent files
         |> Enum.take(100)
-        |> Enum.reduce(cache.nodes, fn file, acc ->
+        |> Task.async_stream(fn file ->
           node_id = Path.rootname(file)
 
           node_data =
@@ -126,6 +126,9 @@ defmodule Kylix.Storage.PersistentDAGEngine do
             |> File.read!()
             |> :erlang.binary_to_term()
 
+          {node_id, node_data}
+        end)
+        |> Enum.reduce(cache.nodes, fn {:ok, {node_id, node_data}}, acc ->
           Map.put(acc, node_id, node_data)
         end)
       else
@@ -140,12 +143,12 @@ defmodule Kylix.Storage.PersistentDAGEngine do
         edges_dir
         |> File.ls!()
         |> Enum.take(100)
-        |> Enum.reduce(cache.edges, fn file, acc ->
-          edge_data =
-            Path.join(edges_dir, file)
-            |> File.read!()
-            |> :erlang.binary_to_term()
-
+        |> Task.async_stream(fn file ->
+          Path.join(edges_dir, file)
+          |> File.read!()
+          |> :erlang.binary_to_term()
+        end)
+        |> Enum.reduce(cache.edges, fn {:ok, edge_data}, acc ->
           case edge_data do
             {from_id, to_id, label} ->
               edges_from = Map.get(acc, from_id, [])
