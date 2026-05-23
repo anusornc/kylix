@@ -269,78 +269,65 @@ defmodule Kylix.API.Router do
 
   # Load transaction benchmark data from JSON files
   defp load_benchmark_data do
-    # Path to benchmark directory
     benchmark_dir = "data/benchmark"
 
-    # Check if directory exists
     if File.exists?(benchmark_dir) && File.dir?(benchmark_dir) do
-      # List all JSON files in the directory
-      files =
-        File.ls!(benchmark_dir)
-        |> Enum.filter(&String.ends_with?(&1, ".json"))
-        |> Enum.sort()
-        # Get newest first
-        |> Enum.reverse()
-        # Take only the 5 most recent
-        |> Enum.take(5)
-
-      # Return empty if no files
-      if files == [] do
-        %{
-          results: [],
-          latest: nil
-        }
-      else
-        # Read and parse the most recent file
-        latest_file = hd(files)
-        latest_path = Path.join(benchmark_dir, latest_file)
-
-        latest_data =
-          case File.read(latest_path) do
-            {:ok, content} ->
-              case Jason.decode(content) do
-                {:ok, parsed} -> parsed
-                _ -> %{}
-              end
-
-            _ ->
-              %{}
-          end
-
-        # Read all files for time series data
-        all_results =
-          Enum.map(files, fn file ->
-            path = Path.join(benchmark_dir, file)
-            timestamp = extract_timestamp_from_filename(file)
-
-            case File.read(path) do
-              {:ok, content} ->
-                case Jason.decode(content) do
-                  {:ok, parsed} ->
-                    Map.put(parsed, "timestamp", timestamp)
-
-                  _ ->
-                    nil
-                end
-
-              _ ->
-                nil
-            end
-          end)
-          |> Enum.filter(&(&1 != nil))
-
-        # Return structured data
-        %{
-          results: all_results,
-          latest: latest_data
-        }
-      end
+      benchmark_dir
+      |> get_recent_benchmark_files()
+      |> load_benchmark_files(benchmark_dir)
     else
-      # Directory doesn't exist
-      %{
-        results: [],
-        latest: nil
-      }
+      empty_benchmark_data()
+    end
+  end
+
+  defp empty_benchmark_data do
+    %{results: [], latest: nil}
+  end
+
+  defp get_recent_benchmark_files(dir) do
+    File.ls!(dir)
+    |> Enum.filter(&String.ends_with?(&1, ".json"))
+    |> Enum.sort()
+    |> Enum.reverse()
+    |> Enum.take(5)
+  end
+
+  defp load_benchmark_files([], _dir), do: empty_benchmark_data()
+
+  defp load_benchmark_files([latest | _] = files, dir) do
+    latest_data = parse_benchmark_file_with_default(Path.join(dir, latest), %{})
+
+    all_results =
+      files
+      |> Enum.map(&parse_benchmark_series_file(&1, dir))
+      |> Enum.filter(&(&1 != nil))
+
+    %{results: all_results, latest: latest_data}
+  end
+
+  defp parse_benchmark_file(path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, parsed} <- Jason.decode(content) do
+      {:ok, parsed}
+    else
+      _ -> :error
+    end
+  end
+
+  defp parse_benchmark_file_with_default(path, default) do
+    case parse_benchmark_file(path) do
+      {:ok, parsed} -> parsed
+      :error -> default
+    end
+  end
+
+  defp parse_benchmark_series_file(file, dir) do
+    path = Path.join(dir, file)
+    timestamp = extract_timestamp_from_filename(file)
+
+    case parse_benchmark_file(path) do
+      {:ok, parsed} -> Map.put(parsed, "timestamp", timestamp)
+      :error -> nil
     end
   end
 
