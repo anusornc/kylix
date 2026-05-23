@@ -30,7 +30,6 @@ defmodule Kylix.Storage.Coordinator do
   @cache_prune_threshold 8000
 
   # Check environment at compile time
-  @is_test Mix.env() == :test
 
   @doc """
   Add a node to storage.
@@ -42,7 +41,7 @@ defmodule Kylix.Storage.Coordinator do
     result = Kylix.Storage.DAGEngine.add_node(node_id, data)
 
     # In non-test environments, also add to persistent storage
-    unless @is_test do
+    if use_persistent_storage?() do
       Kylix.Storage.PersistentDAGEngine.add_node(node_id, data)
     end
 
@@ -62,7 +61,7 @@ defmodule Kylix.Storage.Coordinator do
     result = Kylix.Storage.DAGEngine.add_edge(from_id, to_id, label)
 
     # In non-test environments, also add to persistent storage
-    unless @is_test do
+    if use_persistent_storage?() do
       Kylix.Storage.PersistentDAGEngine.add_edge(from_id, to_id, label)
     end
 
@@ -85,7 +84,7 @@ defmodule Kylix.Storage.Coordinator do
 
       :not_found ->
         # Not in memory, try persistent storage if not in test mode
-        if @is_test do
+        unless use_persistent_storage?() do
           :not_found
         else
           case Kylix.Storage.PersistentDAGEngine.get_node(node_id) do
@@ -110,7 +109,7 @@ defmodule Kylix.Storage.Coordinator do
     # Get nodes from in-memory cache
     in_memory_nodes = Kylix.Storage.DAGEngine.get_all_nodes()
 
-    if !@is_test && Enum.empty?(in_memory_nodes) do
+    if use_persistent_storage?() && Enum.empty?(in_memory_nodes) do
       # In non-test mode and cache is empty, populate from persistent storage
       persistent_nodes = Kylix.Storage.PersistentDAGEngine.get_all_nodes()
 
@@ -166,7 +165,7 @@ defmodule Kylix.Storage.Coordinator do
 
             other_result ->
               # Cache miss or empty results
-              if @is_test do
+              unless use_persistent_storage?() do
                 # In test mode, just return the result from DAGEngine
                 result = other_result
                 store_in_cache(pattern, result)
@@ -217,7 +216,7 @@ defmodule Kylix.Storage.Coordinator do
   Does nothing in test mode.
   """
   def sync_cache do
-    if @is_test do
+    unless use_persistent_storage?() do
       # No-op in test mode
       {:ok, 0}
     else
@@ -478,5 +477,10 @@ defmodule Kylix.Storage.Coordinator do
     :ets.insert(:coordinator_metrics, {:query_time_sum, sum})
     :ets.insert(:coordinator_metrics, {:query_count, count})
     :ets.insert(:coordinator_metrics, {:avg_query_time, avg})
+  end
+  # Check if we should use persistent storage (configurable for tests)
+  @is_test Mix.env() == :test
+  defp use_persistent_storage? do
+    Application.get_env(:kylix, :use_persistent_storage, not @is_test)
   end
 end
