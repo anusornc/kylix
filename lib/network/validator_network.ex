@@ -22,25 +22,29 @@ defmodule Kylix.Network.ValidatorNetwork do
     node_id = Keyword.get(opts, :node_id)
 
     # Start TCP listener
-    {:ok, listen_socket} = :gen_tcp.listen(port, [
-      :binary,
-      packet: :line,
-      active: false,
-      reuseaddr: true
-    ])
+    {:ok, listen_socket} =
+      :gen_tcp.listen(port, [
+        :binary,
+        packet: :line,
+        active: false,
+        reuseaddr: true
+      ])
 
     # Start acceptor process
     spawn_link(fn -> accept_connections(listen_socket) end)
 
     Logger.info("Validator network started on port #{port} with node ID #{node_id}")
 
-    {:ok, %{
-      port: port,
-      node_id: node_id,
-      listen_socket: listen_socket,
-      connections: %{},  # Map of node_id to socket
-      peer_latencies: %{} # Map of node_id to latency measurements
-    }}
+    {:ok,
+     %{
+       port: port,
+       node_id: node_id,
+       listen_socket: listen_socket,
+       # Map of node_id to socket
+       connections: %{},
+       # Map of node_id to latency measurements
+       peer_latencies: %{}
+     }}
   end
 
   # Broadcast a transaction to other validators
@@ -61,7 +65,7 @@ defmodule Kylix.Network.ValidatorNetwork do
   # Monitor an active connection
   defp monitor_connection(socket, peer_id) do
     # Set socket to active mode for this process
-    :inet.setopts(socket, [active: true])
+    :inet.setopts(socket, active: true)
 
     # Periodically send pings to measure latency
     schedule_ping(socket, peer_id)
@@ -93,11 +97,13 @@ defmodule Kylix.Network.ValidatorNetwork do
   end
 
   defp send_ping(socket, _peer_id) do
-    ping = Jason.encode!(%{
-      type: "ping",
-      node_id: node_name(),
-      timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-    })
+    ping =
+      Jason.encode!(%{
+        type: "ping",
+        node_id: node_name(),
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+      })
+
     :gen_tcp.send(socket, ping <> "\n")
   end
 
@@ -110,15 +116,18 @@ defmodule Kylix.Network.ValidatorNetwork do
     case :gen_tcp.recv(socket, 0, 5000) do
       {:ok, data} ->
         response = Jason.decode!(data)
+
         if response["type"] == "pong" do
           end_time = System.monotonic_time(:millisecond)
           end_time - start_time
         else
-          1000 # Assume high latency if wrong response
+          # Assume high latency if wrong response
+          1000
         end
 
       {:error, _} ->
-        2000 # Assume very high latency on timeout
+        # Assume very high latency on timeout
+        2000
     end
   end
 
@@ -128,12 +137,13 @@ defmodule Kylix.Network.ValidatorNetwork do
   end
 
   defp calculate_latency(_error) do
-    1000 # Default latency if timestamp parsing fails
+    # Default latency if timestamp parsing fails
+    1000
   end
 
   defp node_name do
     # Generate a node name if not explicitly provided
-    System.get_env("NODE_ID") || "node-#{:rand.uniform(100000)}"
+    System.get_env("NODE_ID") || "node-#{:rand.uniform(100_000)}"
   end
 
   # Accept incoming connections
@@ -152,8 +162,6 @@ defmodule Kylix.Network.ValidatorNetwork do
         accept_connections(listen_socket)
     end
   end
-
-
 
   @impl true
   def handle_call({:connect, host, port}, _from, state) do
@@ -180,7 +188,8 @@ defmodule Kylix.Network.ValidatorNetwork do
 
         Logger.info("Connected to validator #{peer_id} with latency #{latency}ms")
 
-        {:reply, {:ok, peer_id}, %{state | connections: new_connections, peer_latencies: new_latencies}}
+        {:reply, {:ok, peer_id},
+         %{state | connections: new_connections, peer_latencies: new_latencies}}
 
       {:error, reason} ->
         Logger.error("Failed to connect to #{host}:#{port}: #{reason}")
@@ -202,16 +211,18 @@ defmodule Kylix.Network.ValidatorNetwork do
 
   @impl true
   def handle_cast({:broadcast, :transaction, tx_data}, state) do
-    message = Jason.encode!(%{
-      type: "transaction",
-      data: tx_data,
-      timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-    })
+    message =
+      Jason.encode!(%{
+        type: "transaction",
+        data: tx_data,
+        timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+      })
 
     Enum.each(state.connections, fn {peer_id, socket} ->
       case :gen_tcp.send(socket, message <> "\n") do
         :ok ->
           Logger.debug("Transaction broadcast to #{peer_id}")
+
         {:error, reason} ->
           Logger.error("Failed to broadcast to #{peer_id}: #{reason}")
           # Consider removing this peer if connection is broken
@@ -230,13 +241,16 @@ defmodule Kylix.Network.ValidatorNetwork do
       "transaction" ->
         # Forward to blockchain server
         tx_data = message["data"]
+
         spawn(fn ->
           Kylix.BlockchainServer.receive_transaction(tx_data)
         end)
 
       "ping" ->
         # Respond to ping with pong
-        response = Jason.encode!(%{type: "pong", timestamp: DateTime.utc_now() |> DateTime.to_iso8601()})
+        response =
+          Jason.encode!(%{type: "pong", timestamp: DateTime.utc_now() |> DateTime.to_iso8601()})
+
         :gen_tcp.send(socket, response <> "\n")
 
       "pong" ->
@@ -263,11 +277,13 @@ defmodule Kylix.Network.ValidatorNetwork do
         peer_id = handshake["node_id"]
 
         # Send our handshake response
-        response = Jason.encode!(%{
-          type: "handshake_response",
-          node_id: node_name(),
-          status: "accepted"
-        })
+        response =
+          Jason.encode!(%{
+            type: "handshake_response",
+            node_id: node_name(),
+            status: "accepted"
+          })
+
         :gen_tcp.send(socket, response <> "\n")
 
         # Update connections in the GenServer

@@ -52,7 +52,7 @@ defmodule Kylix do
     Kylix.BlockchainServer.add_validator(validator_id, pubkey, known_by)
   end
 
-   # Add these new functions for validator management
+  # Add these new functions for validator management
 
   @doc """
   Gets the current validator selected for transaction processing.

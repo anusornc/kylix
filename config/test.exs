@@ -3,7 +3,8 @@ import Config
 
 config :kylix,
   db_path: "data/test/dag_storage",
-  port: 4050,  # Different port for tests
+  # Different port for tests
+  port: 4050,
   node_id: "kylix-test-node",
   validators_dir: "config/validators",
   clientwallet: "config/client_wallets"

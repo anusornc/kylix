@@ -7,7 +7,8 @@ defmodule Kylix.Storage.PersistentDAGEngine do
   @metadata_file "metadata.bin"
   @nodes_dir "nodes"
   @edges_dir "edges"
-  @cache_ttl 300 # 5 minutes in seconds
+  # 5 minutes in seconds
+  @cache_ttl 300
 
   # State structure
   # %{
@@ -118,14 +119,20 @@ defmodule Kylix.Storage.PersistentDAGEngine do
         |> File.ls!()
         # Limit to recent files
         |> Enum.take(100)
-        |> Enum.reduce(cache.nodes, fn file, acc ->
-          node_id = Path.rootname(file)
+        |> Task.async_stream(
+          fn file ->
+            node_id = Path.rootname(file)
 
-          node_data =
-            Path.join(nodes_dir, file)
-            |> File.read!()
-            |> :erlang.binary_to_term()
+            node_data =
+              Path.join(nodes_dir, file)
+              |> File.read!()
+              |> :erlang.binary_to_term()
 
+            {node_id, node_data}
+          end,
+          max_concurrency: System.schedulers_online()
+        )
+        |> Enum.reduce(cache.nodes, fn {:ok, {node_id, node_data}}, acc ->
           Map.put(acc, node_id, node_data)
         end)
       else
@@ -140,16 +147,23 @@ defmodule Kylix.Storage.PersistentDAGEngine do
         edges_dir
         |> File.ls!()
         |> Enum.take(100)
-        |> Enum.reduce(cache.edges, fn file, acc ->
-          edge_data =
-            Path.join(edges_dir, file)
-            |> File.read!()
-            |> :erlang.binary_to_term()
+        |> Task.async_stream(
+          fn file ->
+            edge_data =
+              Path.join(edges_dir, file)
+              |> File.read!()
+              |> :erlang.binary_to_term()
 
+            edge_data
+          end,
+          max_concurrency: System.schedulers_online()
+        )
+        |> Enum.reduce(cache.edges, fn {:ok, edge_data}, acc ->
           case edge_data do
             {from_id, to_id, label} ->
               edges_from = Map.get(acc, from_id, [])
               Map.put(acc, from_id, [{to_id, label} | edges_from])
+
             _ ->
               acc
           end
@@ -373,6 +387,7 @@ defmodule Kylix.Storage.PersistentDAGEngine do
       {result, timestamp} ->
         # Check if cache entry is still valid
         now = System.system_time(:second)
+
         if now - timestamp <= @cache_ttl do
           {:hit, result}
         else
@@ -383,7 +398,8 @@ defmodule Kylix.Storage.PersistentDAGEngine do
 
   # Schedule cache cleanup
   defp schedule_cache_cleanup do
-    Process.send_after(self(), :cache_cleanup, 60 * 1000) # Run every minute
+    # Run every minute
+    Process.send_after(self(), :cache_cleanup, 60 * 1000)
   end
 
   # Handle cache cleanup

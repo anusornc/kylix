@@ -20,7 +20,9 @@ defmodule Kylix.Query.SparqlAggregatorTest do
     end
 
     test "parses COUNT with alias" do
-      {:ok, result} = SparqlAggregator.parse_aggregate_expression("COUNT(?person AS ?personCount)")
+      {:ok, result} =
+        SparqlAggregator.parse_aggregate_expression("COUNT(?person AS ?personCount)")
+
       assert result.function == :count
       assert result.variable == "person"
       assert result.alias == "personCount"
@@ -63,7 +65,9 @@ defmodule Kylix.Query.SparqlAggregatorTest do
     end
 
     test "parses GROUP_CONCAT with separator" do
-      {:ok, result} = SparqlAggregator.parse_aggregate_expression("GROUP_CONCAT(?name SEPARATOR \"; \")")
+      {:ok, result} =
+        SparqlAggregator.parse_aggregate_expression("GROUP_CONCAT(?name SEPARATOR \"; \")")
+
       assert result.function == :group_concat
       assert result.variable == "name"
       assert result.options.separator == "; "
@@ -71,7 +75,11 @@ defmodule Kylix.Query.SparqlAggregatorTest do
     end
 
     test "parses GROUP_CONCAT with separator and alias" do
-      {:ok, result} = SparqlAggregator.parse_aggregate_expression("GROUP_CONCAT(?name SEPARATOR \", \" AS ?nameList)")
+      {:ok, result} =
+        SparqlAggregator.parse_aggregate_expression(
+          "GROUP_CONCAT(?name SEPARATOR \", \" AS ?nameList)"
+        )
+
       assert result.function == :group_concat
       assert result.variable == "name"
       assert result.options.separator == ", "
@@ -135,7 +143,8 @@ defmodule Kylix.Query.SparqlAggregatorTest do
       [aggregated] = SparqlAggregator.apply_aggregations(results, [count_distinct_agg])
 
       # Verify result - should count unique values
-      assert aggregated["uniqueItems"] == 2  # Pizza, Pasta
+      # Pizza, Pasta
+      assert aggregated["uniqueItems"] == 2
     end
 
     test "applies GROUP BY with COUNT" do
@@ -158,15 +167,18 @@ defmodule Kylix.Query.SparqlAggregatorTest do
       aggregated = SparqlAggregator.apply_aggregations(results, [count_agg], ["s"])
 
       # Verify grouping
-      assert length(aggregated) == 2  # Two groups: Alice, Bob
+      # Two groups: Alice, Bob
+      assert length(aggregated) == 2
 
       # Find Alice's group
       alice_group = Enum.find(aggregated, fn group -> group["s"] == "Alice" end)
-      assert alice_group["friendCount"] == 2  # Alice knows 2 people
+      # Alice knows 2 people
+      assert alice_group["friendCount"] == 2
 
       # Find Bob's group
       bob_group = Enum.find(aggregated, fn group -> group["s"] == "Bob" end)
-      assert bob_group["friendCount"] == 1  # Bob knows 1 person
+      # Bob knows 1 person
+      assert bob_group["friendCount"] == 1
     end
 
     test "applies multiple aggregations" do
@@ -225,7 +237,8 @@ defmodule Kylix.Query.SparqlAggregatorTest do
       }
 
       # SELECT clause with aggregates
-      select_clause = "SELECT ?person (COUNT(?friend) AS ?friendCount) WHERE { ?person knows ?friend } GROUP BY ?person"
+      select_clause =
+        "SELECT ?person (COUNT(?friend) AS ?friendCount) WHERE { ?person knows ?friend } GROUP BY ?person"
 
       # Enhance query structure
       enhanced = SparqlAggregator.enhance_query_with_aggregates(query_structure, select_clause)
@@ -248,13 +261,20 @@ defmodule Kylix.Query.SparqlAggregatorTest do
         variables: ["person", "friendCount", "avgAge"]
       }
 
-      select_clause = "SELECT ?person (COUNT(?friend) AS ?friendCount) (AVG(?age) AS ?avgAge) WHERE { ... } GROUP BY ?person"
+      select_clause =
+        "SELECT ?person (COUNT(?friend) AS ?friendCount) (AVG(?age) AS ?avgAge) WHERE { ... } GROUP BY ?person"
 
       enhanced = SparqlAggregator.enhance_query_with_aggregates(query_structure, select_clause)
 
       assert length(enhanced.aggregates) == 2
-      assert Enum.any?(enhanced.aggregates, fn agg -> agg.function == :count && agg.alias == "friendCount" end)
-      assert Enum.any?(enhanced.aggregates, fn agg -> agg.function == :avg && agg.alias == "avgAge" end)
+
+      assert Enum.any?(enhanced.aggregates, fn agg ->
+               agg.function == :count && agg.alias == "friendCount"
+             end)
+
+      assert Enum.any?(enhanced.aggregates, fn agg ->
+               agg.function == :avg && agg.alias == "avgAge"
+             end)
     end
 
     test "handles queries without aggregates" do
@@ -311,7 +331,13 @@ defmodule Kylix.Query.SparqlAggregatorTest do
 
     test "computes GROUP_CONCAT correctly" do
       results = [%{"name" => "Alice"}, %{"name" => "Bob"}, %{"name" => "Charlie"}]
-      aggregate = %{function: :group_concat, variable: "name", distinct: false, options: %{separator: ", "}}
+
+      aggregate = %{
+        function: :group_concat,
+        variable: "name",
+        distinct: false,
+        options: %{separator: ", "}
+      }
 
       assert SparqlAggregator.compute_aggregate(aggregate, results) == "Alice, Bob, Charlie"
     end

@@ -23,11 +23,12 @@ defmodule Kylix.EnvironmentTest do
   end
 
   test "demonstrate how @is_test affects conditional code" do
-    result = if @is_test do
-      "test environment behavior"
-    else
-      "production environment behavior"
-    end
+    result =
+      if @is_test do
+        "test environment behavior"
+      else
+        "production environment behavior"
+      end
 
     assert result == "test environment behavior"
     IO.puts("SUCCESS: Conditional code using @is_test works as expected")

@@ -16,7 +16,6 @@ defmodule KylixTest do
     # Get test key pair
     {:ok, %{private_key: private_key, public_key: public_key}} = get_test_key_pair()
     {:ok, private_key: private_key, public_key: public_key}
-
   end
 
   describe "add transaction with valid validator and signature" do
@@ -28,7 +27,9 @@ defmodule KylixTest do
       tx_hash = hash_transaction(unique_subject, "predicate", "object", "agent1", timestamp)
       signature = sign(tx_hash, private_key)
 
-      assert {:ok, tx_id} = Kylix.add_transaction(unique_subject, "predicate", "object", "agent1", signature)
+      assert {:ok, tx_id} =
+               Kylix.add_transaction(unique_subject, "predicate", "object", "agent1", signature)
+
       assert String.starts_with?(tx_id, "tx")
     end
   end
@@ -38,7 +39,9 @@ defmodule KylixTest do
       timestamp = DateTime.utc_now()
       tx_hash = hash_transaction("subject", "predicate", "object", "unknown_agent", timestamp)
       signature = sign(tx_hash, private_key)
-      assert {:error, :unknown_validator} = Kylix.add_transaction("subject", "predicate", "object", "unknown_agent", signature)
+
+      assert {:error, :unknown_validator} =
+               Kylix.add_transaction("subject", "predicate", "object", "unknown_agent", signature)
     end
   end
 
@@ -47,8 +50,13 @@ defmodule KylixTest do
       timestamp = DateTime.utc_now()
       tx_hash = hash_transaction("subject1", "predicate1", "object1", "agent1", timestamp)
       signature = sign(tx_hash, private_key)
-      {:ok, _tx_id} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", signature)
-      {:ok, _tx_id} = Kylix.add_transaction("subject2", "predicate2", "object2", "agent2", signature)
+
+      {:ok, _tx_id} =
+        Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", signature)
+
+      {:ok, _tx_id} =
+        Kylix.add_transaction("subject2", "predicate2", "object2", "agent2", signature)
+
       {:ok, results} = Kylix.query({"subject1", "predicate1", "object1"})
       assert length(results) == 1
     end
@@ -59,10 +67,16 @@ defmodule KylixTest do
       timestamp = DateTime.utc_now()
       tx_hash = hash_transaction("subject1", "predicate1", "object1", "agent1", timestamp)
       signature = sign(tx_hash, private_key)
-      {:ok, _tx_id} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", signature)
+
+      {:ok, _tx_id} =
+        Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", signature)
+
       tx_hash = hash_transaction("subject2", "predicate2", "object2", "agent2", timestamp)
       signature = sign(tx_hash, private_key)
-      {:ok, _tx_id} = Kylix.add_transaction("subject2", "predicate2", "object2", "agent2", signature)
+
+      {:ok, _tx_id} =
+        Kylix.add_transaction("subject2", "predicate2", "object2", "agent2", signature)
+
       {:ok, results} = Kylix.query({nil, nil, nil})
       assert length(results) == 2
     end

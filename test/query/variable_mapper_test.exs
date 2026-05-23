@@ -88,7 +88,16 @@ defmodule Kylix.Query.VariableMapperTest do
 
   describe "extract_variable_positions/2" do
     test "maps common PROV-O variables to positions" do
-      prov_vars = ["entity", "activity", "agent", "wasGeneratedBy", "used", "sourceEntity", "derivedEntity"]
+      prov_vars = [
+        "entity",
+        "activity",
+        "agent",
+        "wasGeneratedBy",
+        "used",
+        "sourceEntity",
+        "derivedEntity"
+      ]
+
       prov_positions = VariableMapper.extract_variable_positions(prov_vars)
 
       assert prov_positions["entity"] == "s"
@@ -103,7 +112,18 @@ defmodule Kylix.Query.VariableMapperTest do
     end
 
     test "correctly maps standard variable names" do
-      standard_vars = ["s", "p", "o", "subject", "predicate", "object", "person", "relation", "target"]
+      standard_vars = [
+        "s",
+        "p",
+        "o",
+        "subject",
+        "predicate",
+        "object",
+        "person",
+        "relation",
+        "target"
+      ]
+
       positions = VariableMapper.extract_variable_positions(standard_vars)
 
       assert positions["s"] == "s"
@@ -142,11 +162,12 @@ defmodule Kylix.Query.VariableMapperTest do
         variable_positions: %{"derivedEntity" => "s", "sourceEntity" => "o"}
       }
 
-      prov_projection = VariableMapper.project_variables(
-        prov_binding,
-        ["derivedEntity", "sourceEntity", "count_derivation"],
-        prov_query_structure
-      )
+      prov_projection =
+        VariableMapper.project_variables(
+          prov_binding,
+          ["derivedEntity", "sourceEntity", "count_derivation"],
+          prov_query_structure
+        )
 
       # Should only include the requested variables
       assert map_size(prov_projection) == 3
@@ -162,11 +183,12 @@ defmodule Kylix.Query.VariableMapperTest do
         "relationCount" => 10
       }
 
-      projection = VariableMapper.project_variables(
-        binding,
-        ["count", "count_friend", "relationCount"],
-        %{}
-      )
+      projection =
+        VariableMapper.project_variables(
+          binding,
+          ["count", "count_friend", "relationCount"],
+          %{}
+        )
 
       assert projection["count_friend"] == 5
       assert projection["relationCount"] == 10
@@ -183,11 +205,12 @@ defmodule Kylix.Query.VariableMapperTest do
         "o" => "activity:process1"
       }
 
-      projection = VariableMapper.project_variables(
-        binding,
-        ["subject", "object", "person", "target"],
-        %{}
-      )
+      projection =
+        VariableMapper.project_variables(
+          binding,
+          ["subject", "object", "person", "target"],
+          %{}
+        )
 
       assert projection["subject"] == "entity:document1"
       assert projection["object"] == "activity:process1"
@@ -198,11 +221,12 @@ defmodule Kylix.Query.VariableMapperTest do
     test "includes nil for missing variables" do
       binding = %{"s" => "entity:test"}
 
-      projection = VariableMapper.project_variables(
-        binding,
-        ["s", "nonExistentVar"],
-        %{}
-      )
+      projection =
+        VariableMapper.project_variables(
+          binding,
+          ["s", "nonExistentVar"],
+          %{}
+        )
 
       assert projection["s"] == "entity:test"
       assert projection["nonExistentVar"] == nil
