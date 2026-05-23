@@ -5,7 +5,7 @@ defmodule Kylix.MixProject do
     [
       app: :kylix,
       version: "0.1.0",
-      elixir: "~> 1.18",
+      elixir: ">= 1.14.0",
       dialyzer: [plt_add_apps: [:mix, :ex_unit]],
       start_permanent: Mix.env() == :prod,
       deps: deps(),

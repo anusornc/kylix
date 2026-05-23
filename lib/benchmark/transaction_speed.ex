@@ -207,16 +207,11 @@ defmodule Kylix.Benchmark.TransactionSpeed do
       end)
 
     # Count successful and failed transactions
-    success_count =
-      Enum.count(tx_results, fn
-        nil -> false
-        status -> match?({:ok, _}, Map.get(status, :result, {:error, :not_processed}))
-      end)
-
-    failure_count =
-      Enum.count(tx_results, fn
-        nil -> false
-        status -> match?({:error, _}, Map.get(status, :result, {:ok, "counted_as_success"}))
+    {success_count, failure_count} =
+      Enum.reduce(tx_results, {0, 0}, fn
+        %{result: {:ok, _}}, {succ, fail} -> {succ + 1, fail}
+        %{result: {:error, _}}, {succ, fail} -> {succ, fail + 1}
+        _, acc -> acc
       end)
 
     # Calculate statistics
