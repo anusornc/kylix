@@ -130,7 +130,13 @@ defmodule Kylix.BlockchainServer do
         # Add the public key
         new_public_keys = Map.put(state.public_keys, validator_id, pubkey)
         # Update state
-        new_state = %{state | validators: new_validators, public_keys: new_public_keys}
+        new_state = %{
+          state
+          | validators: new_validators,
+            validators_tuple: List.to_tuple(new_validators),
+            public_keys: new_public_keys
+        }
+
         {:reply, {:ok, validator_id}, new_state}
     end
   end
@@ -189,6 +195,7 @@ defmodule Kylix.BlockchainServer do
      %{
        tx_count: 0,
        validators: final_validators,
+       validators_tuple: List.to_tuple(final_validators),
        public_keys: public_keys,
        last_block_time: DateTime.utc_now(),
        test_key_pair: test_key_pair
@@ -291,8 +298,7 @@ defmodule Kylix.BlockchainServer do
                         if state.tx_count > 0 do
                           prev_tx_id = "tx#{state.tx_count}"
 
-                          :ok =
-                            Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
+                          :ok = Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
                         end
 
                         # Update state
@@ -313,7 +319,10 @@ defmodule Kylix.BlockchainServer do
                         Kylix.Consensus.ValidatorCoordinator.get_current_validator()
                       else
                         # Fall back to existing round-robin logic
-                        Enum.at(state.validators, rem(state.tx_count, length(state.validators)))
+                        elem(
+                          state.validators_tuple,
+                          rem(state.tx_count, tuple_size(state.validators_tuple))
+                        )
                       end
 
                     # Start performance timing
@@ -326,7 +335,9 @@ defmodule Kylix.BlockchainServer do
                       # Get public key - check coordinator first, then local state
                       public_key =
                         if use_coordinator?() do
-                          case Kylix.Consensus.ValidatorCoordinator.get_validator_key(validator_id) do
+                          case Kylix.Consensus.ValidatorCoordinator.get_validator_key(
+                                 validator_id
+                               ) do
                             {:ok, key} -> key
                             _ -> Map.get(state.public_keys, validator_id)
                           end
@@ -441,8 +452,8 @@ defmodule Kylix.BlockchainServer do
   # Helper to check if ValidatorCoordinator is running and should be used
   defp use_coordinator?() do
     # Check if the ValidatorCoordinator module is available
+    # Check if the process is running
     Code.ensure_loaded?(Kylix.Consensus.ValidatorCoordinator) &&
-      # Check if the process is running
       !is_nil(Process.whereis(Kylix.Consensus.ValidatorCoordinator))
   end
 
