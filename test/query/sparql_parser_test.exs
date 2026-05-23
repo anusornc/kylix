@@ -32,13 +32,15 @@ defmodule Kylix.Query.SparqlParserTest do
 
       {:ok, parsed} = SparqlParser.parse(query)
       assert length(parsed.patterns) >= 1
-      
+
       pattern = hd(parsed.patterns)
       assert pattern.p == "knows"
 
-      has_lives_pattern = Enum.any?(parsed.patterns, fn p ->
-        p.p == "lives" && p.o == "Paris"
-      end)
+      has_lives_pattern =
+        Enum.any?(parsed.patterns, fn p ->
+          p.p == "lives" && p.o == "Paris"
+        end)
+
       assert has_lives_pattern
     end
   end
@@ -109,17 +111,17 @@ defmodule Kylix.Query.SparqlParserTest do
 
       {:ok, parsed} = SparqlParser.parse(query)
       assert length(parsed.optionals) == 1
-      
+
       optional = hd(parsed.optionals)
       assert length(optional.patterns) == 1
-      
+
       # Check the first pattern is about email
       pattern = hd(optional.patterns)
       assert pattern.p == "email"
-      
+
       # Check we have nested optionals
       assert length(optional.optionals) == 1
-      
+
       # Check the nested optional is about phone
       nested_optional = hd(optional.optionals)
       nested_pattern = hd(nested_optional.patterns)
@@ -142,11 +144,11 @@ defmodule Kylix.Query.SparqlParserTest do
       union = hd(parsed.unions)
       assert map_size(union.left) > 0
       assert map_size(union.right) > 0
-      
+
       # Check left side has patterns about 'knows'
       left_pattern = hd(union.left.patterns)
       assert left_pattern.p == "knows"
-      
+
       # Check right side has patterns about 'likes'
       right_pattern = hd(union.right.patterns)
       assert right_pattern.p == "likes"
@@ -160,7 +162,7 @@ defmodule Kylix.Query.SparqlParserTest do
       {:ok, parsed} = SparqlParser.parse(query)
       assert parsed.group_by == ["s"]
       assert parsed.has_aggregates == true
-      
+
       # Check the aggregation function details
       agg = hd(parsed.aggregates)
       assert agg.function == :count
@@ -182,12 +184,12 @@ defmodule Kylix.Query.SparqlParserTest do
       assert parsed.group_by == ["person"]
       assert parsed.has_aggregates == true
       assert length(parsed.aggregates) == 2
-      
+
       # Check for the COUNT aggregate
       count_agg = Enum.find(parsed.aggregates, fn a -> a.function == :count end)
       assert count_agg.variable == "friend"
       assert count_agg.alias == "friendCount"
-      
+
       # Check for the MAX aggregate
       max_agg = Enum.find(parsed.aggregates, fn a -> a.function == :max end)
       assert max_agg.variable == "age"
@@ -216,9 +218,11 @@ defmodule Kylix.Query.SparqlParserTest do
       # Check DESC ordering
       desc_ordering = Enum.find(parsed.order_by, fn o -> o.direction == :desc end)
       assert desc_ordering.variable == "s"
-      
+
       # Check ASC ordering
-      asc_ordering = Enum.find(parsed.order_by, fn o -> o.direction == :asc && o.variable == "p" end)
+      asc_ordering =
+        Enum.find(parsed.order_by, fn o -> o.direction == :asc && o.variable == "p" end)
+
       assert asc_ordering != nil
     end
 
@@ -283,21 +287,25 @@ defmodule Kylix.Query.SparqlParserTest do
 
   describe "parse/1 with error handling" do
     test "returns error for malformed query" do
-      query = "SELECT ?s ?p WHERE { ?s ?p" # Missing closing brace
+      # Missing closing brace
+      query = "SELECT ?s ?p WHERE { ?s ?p"
 
       {:error, error_message} = SparqlParser.parse(query)
       assert is_binary(error_message)
+
       assert String.contains?(error_message, "Parse error") ||
-             String.contains?(error_message, "Failed to parse")
+               String.contains?(error_message, "Failed to parse")
     end
 
     test "returns error for query with syntax error" do
-      query = "SELEC ?s ?p ?o WHERE { ?s ?p ?o }" # Misspelled SELECT
+      # Misspelled SELECT
+      query = "SELEC ?s ?p ?o WHERE { ?s ?p ?o }"
 
       {:error, error_message} = SparqlParser.parse(query)
       assert is_binary(error_message)
+
       assert String.contains?(error_message, "error") ||
-             String.contains?(error_message, "failed")
+               String.contains?(error_message, "failed")
     end
   end
 end

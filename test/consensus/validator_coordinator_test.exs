@@ -17,11 +17,14 @@ defmodule Kylix.Consensus.ValidatorCoordinatorTest do
       case Process.whereis(ValidatorCoordinator) do
         nil ->
           # Start the coordinator if it doesn't exist
-          {:ok, pid} = ValidatorCoordinator.start_link(
-            validators: validators,
-            config_dir: @test_dir
-          )
+          {:ok, pid} =
+            ValidatorCoordinator.start_link(
+              validators: validators,
+              config_dir: @test_dir
+            )
+
           pid
+
         pid ->
           # Use existing coordinator
           pid
@@ -155,11 +158,12 @@ defmodule Kylix.Consensus.ValidatorCoordinatorTest do
           # Stop the existing coordinator
           GenServer.stop(coordinator)
           # Start a new one with a small window size
-          {:ok, _} = ValidatorCoordinator.start_link(
-            validators: ["agent1", "agent2"],
-            config_dir: @test_dir,
-            performance_window: window_size
-          )
+          {:ok, _} =
+            ValidatorCoordinator.start_link(
+              validators: ["agent1", "agent2"],
+              config_dir: @test_dir,
+              performance_window: window_size
+            )
       end
 
       # Record more transactions than the window size

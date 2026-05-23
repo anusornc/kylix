@@ -18,6 +18,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
       DAGEngine.clear_all()
       setup_test_data()
     end
+
     :ok
   end
 
@@ -114,11 +115,13 @@ defmodule Kylix.Query.SparqlExecutorTest do
         # Add the pattern_filters key that's required by the executor
         query_structure = %{
           patterns: [%{s: nil, p: nil, o: nil}],
-          filters: [%{
-            type: :equality,
-            variable: "s",
-            value: "entity:document1"
-          }],
+          filters: [
+            %{
+              type: :equality,
+              variable: "s",
+              value: "entity:document1"
+            }
+          ],
           pattern_filters: [],
           optionals: [],
           unions: [],
@@ -134,6 +137,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
 
         # Modified to handle potential error (we're interested in the test passing, not the specific result)
         result = SparqlExecutor.execute(query_structure)
+
         case result do
           {:ok, results} ->
             # If we get results, verify that filtering works
@@ -143,6 +147,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
               # No results but successful execution is fine for tests
               assert true
             end
+
           {:error, _} ->
             # For testing purposes, just make sure the function is called
             assert true
@@ -157,11 +162,13 @@ defmodule Kylix.Query.SparqlExecutorTest do
       if function_exported?(DAGEngine, :clear_all, 0) do
         query_structure = %{
           patterns: [%{s: nil, p: nil, o: nil}],
-          filters: [%{
-            type: :inequality,
-            variable: "s",
-            value: "entity:document2"
-          }],
+          filters: [
+            %{
+              type: :inequality,
+              variable: "s",
+              value: "entity:document2"
+            }
+          ],
           pattern_filters: [],
           optionals: [],
           unions: [],
@@ -177,6 +184,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
 
         # Using a more resilient approach
         result = SparqlExecutor.execute(query_structure)
+
         case result do
           {:ok, results} ->
             if length(results) > 0 do
@@ -184,6 +192,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
             else
               assert true
             end
+
           {:error, _} ->
             assert true
         end
@@ -205,11 +214,13 @@ defmodule Kylix.Query.SparqlExecutorTest do
 
         query_structure = %{
           patterns: [%{s: "test:numeric", p: nil, o: nil}],
-          filters: [%{
-            type: :greater_than,
-            variable: "count",
-            value: 50
-          }],
+          filters: [
+            %{
+              type: :greater_than,
+              variable: "count",
+              value: 50
+            }
+          ],
           pattern_filters: [],
           optionals: [],
           unions: [],
@@ -225,10 +236,12 @@ defmodule Kylix.Query.SparqlExecutorTest do
 
         # Resilient approach to testing
         result = SparqlExecutor.execute(query_structure)
+
         case result do
           {:ok, _results} ->
             # Success case - we don't need to check specific content for this test
             assert true
+
           {:error, _} ->
             # We're testing function calls, so an error is still a successful test
             assert true
@@ -265,6 +278,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
 
         # Resilient testing approach
         result = SparqlExecutor.execute(query_structure)
+
         case result do
           {:ok, _} -> assert true
           {:error, _} -> assert true
@@ -302,6 +316,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
 
         # Resilient testing approach
         result = SparqlExecutor.execute(query_structure)
+
         case result do
           {:ok, _} -> assert true
           {:error, _} -> assert true
@@ -337,6 +352,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
 
         # Resilient testing approach
         result = SparqlExecutor.execute(query_structure)
+
         case result do
           {:ok, _} -> assert true
           {:error, _} -> assert true
@@ -367,6 +383,7 @@ defmodule Kylix.Query.SparqlExecutorTest do
 
         # Resilient testing approach
         result = SparqlExecutor.execute(query_structure)
+
         case result do
           {:ok, _} -> assert true
           {:error, _} -> assert true
@@ -415,7 +432,8 @@ defmodule Kylix.Query.SparqlExecutorTest do
       predicate: "prov:wasGeneratedBy",
       object: "activity:time1",
       validator: "agent:validator1",
-      timestamp: timestamp2  # Middle timestamp
+      # Middle timestamp
+      timestamp: timestamp2
     })
 
     DAGEngine.add_node("time2", %{
@@ -423,7 +441,8 @@ defmodule Kylix.Query.SparqlExecutorTest do
       predicate: "prov:wasGeneratedBy",
       object: "activity:time2",
       validator: "agent:validator1",
-      timestamp: timestamp1  # Earliest timestamp
+      # Earliest timestamp
+      timestamp: timestamp1
     })
 
     DAGEngine.add_node("time3", %{
@@ -431,7 +450,8 @@ defmodule Kylix.Query.SparqlExecutorTest do
       predicate: "prov:wasGeneratedBy",
       object: "activity:time3",
       validator: "agent:validator1",
-      timestamp: timestamp3  # Latest timestamp
+      # Latest timestamp
+      timestamp: timestamp3
     })
   end
 end

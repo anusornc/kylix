@@ -16,6 +16,7 @@ defmodule Kylix.Consensus do
       true ->
         Logger.info("Consensus system initialized")
         :ok
+
       false ->
         Logger.warning("Consensus system not ready - ValidatorCoordinator not running")
         {:error, :coordinator_not_running}
@@ -33,7 +34,8 @@ defmodule Kylix.Consensus do
       try do
         # The transaction count would be equivalent to the round number
         # We'll need to add an API to get this from the BlockchainServer
-        0  # Placeholder until proper API exists
+        # Placeholder until proper API exists
+        0
       rescue
         _ -> 0
       end
@@ -132,6 +134,7 @@ defmodule Kylix.Consensus do
         tx_time
       )
     end
+
     :ok
   end
 end

@@ -22,7 +22,8 @@ defmodule Kylix.Storage.DAGEngineTest do
           GenServer.stop(DAGEngine)
         end
       catch
-        _kind, _reason -> :ok  # Ignore errors if process is already gone
+        # Ignore errors if process is already gone
+        _kind, _reason -> :ok
       end
     end)
 
@@ -89,25 +90,30 @@ defmodule Kylix.Storage.DAGEngineTest do
 
       # Verify edge exists
       assert Enum.any?(edges, fn edge ->
-        case edge do
-          {from, to, label} -> from == "source" && to == "target" && label == "connects"
-          {to, label} -> to == "target" && label == "connects"
-          _ -> false
-        end
-      end)
+               case edge do
+                 {from, to, label} -> from == "source" && to == "target" && label == "connects"
+                 {to, label} -> to == "target" && label == "connects"
+                 _ -> false
+               end
+             end)
     end
 
     test "add_edge fails if nodes don't exist" do
       # Try to add edge between non-existent nodes
-      assert {:error, :node_not_found} = DAGEngine.add_edge("missing_source", "missing_target", "label")
+      assert {:error, :node_not_found} =
+               DAGEngine.add_edge("missing_source", "missing_target", "label")
 
       # Add only source node
       DAGEngine.add_node("only_source", %{})
-      assert {:error, :node_not_found} = DAGEngine.add_edge("only_source", "missing_target", "label")
+
+      assert {:error, :node_not_found} =
+               DAGEngine.add_edge("only_source", "missing_target", "label")
 
       # Add only target node
       DAGEngine.add_node("only_target", %{})
-      assert {:error, :node_not_found} = DAGEngine.add_edge("missing_source", "only_target", "label")
+
+      assert {:error, :node_not_found} =
+               DAGEngine.add_edge("missing_source", "only_target", "label")
     end
   end
 
@@ -169,7 +175,8 @@ defmodule Kylix.Storage.DAGEngineTest do
 
     test "query with all wildcards" do
       {:ok, results} = DAGEngine.query({nil, nil, nil})
-      assert length(results) == 4  # Should return all four nodes
+      # Should return all four nodes
+      assert length(results) == 4
     end
 
     test "query with no matches" do

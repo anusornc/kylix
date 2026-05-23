@@ -326,7 +326,9 @@ defmodule Kylix.BlockchainServer do
                       # Get public key - check coordinator first, then local state
                       public_key =
                         if use_coordinator?() do
-                          case Kylix.Consensus.ValidatorCoordinator.get_validator_key(validator_id) do
+                          case Kylix.Consensus.ValidatorCoordinator.get_validator_key(
+                                 validator_id
+                               ) do
                             {:ok, key} -> key
                             _ -> Map.get(state.public_keys, validator_id)
                           end
@@ -441,8 +443,8 @@ defmodule Kylix.BlockchainServer do
   # Helper to check if ValidatorCoordinator is running and should be used
   defp use_coordinator?() do
     # Check if the ValidatorCoordinator module is available
+    # Check if the process is running
     Code.ensure_loaded?(Kylix.Consensus.ValidatorCoordinator) &&
-      # Check if the process is running
       !is_nil(Process.whereis(Kylix.Consensus.ValidatorCoordinator))
   end
 
