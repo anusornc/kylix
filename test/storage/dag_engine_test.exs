@@ -111,6 +111,29 @@ defmodule Kylix.Storage.DAGEngineTest do
     end
   end
 
+  describe "clear_all operations" do
+    test "clear_all removes all nodes, edges, and indexes" do
+      # Add nodes
+      DAGEngine.add_node("tx1", %{subject: "Alice", predicate: "knows", object: "Bob"})
+      DAGEngine.add_node("tx2", %{subject: "Alice", predicate: "likes", object: "Pizza"})
+
+      # Add edge
+      DAGEngine.add_edge("tx1", "tx2", "same_subject")
+
+      # Verify they were added
+      assert length(DAGEngine.get_all_nodes()) == 2
+      {:ok, results} = DAGEngine.query({nil, nil, nil})
+      assert length(results) == 2
+
+      # Clear everything
+      assert :ok = DAGEngine.clear_all()
+
+      # Verify everything is gone
+      assert DAGEngine.get_all_nodes() == []
+      assert {:ok, []} = DAGEngine.query({nil, nil, nil})
+    end
+  end
+
   describe "query operations" do
     setup do
       # Create a graph with triple-like structure for testing queries
