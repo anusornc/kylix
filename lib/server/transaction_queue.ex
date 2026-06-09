@@ -13,7 +13,8 @@ defmodule Kylix.Server.TransactionQueue do
   require Logger
 
   @default_batch_size 10
-  @default_processing_interval 100 # milliseconds
+  # milliseconds
+  @default_processing_interval 100
 
   # Client API
 
@@ -93,24 +94,31 @@ defmodule Kylix.Server.TransactionQueue do
     processing_interval = Keyword.get(opts, :processing_interval, @default_processing_interval)
 
     # Try to get validators from BlockchainServer with fallback
-    validators = try do
-      # Try to get validators from the blockchain server
-      case Kylix.get_validators() do
-        [_|_] = valid_validators ->
-          # Non-empty list of validators
-          Logger.info("Found validators: #{inspect(valid_validators)}")
-          valid_validators
-        _ ->
-          # Empty list or any unexpected value
-          Logger.warning("No valid validators found from BlockchainServer, using default fallback validators")
-          ["agent1", "agent2"] # Fallback validators
+    validators =
+      try do
+        # Try to get validators from the blockchain server
+        case Kylix.get_validators() do
+          [_ | _] = valid_validators ->
+            # Non-empty list of validators
+            Logger.info("Found validators: #{inspect(valid_validators)}")
+            valid_validators
+
+          _ ->
+            # Empty list or any unexpected value
+            Logger.warning(
+              "No valid validators found from BlockchainServer, using default fallback validators"
+            )
+
+            # Fallback validators
+            ["agent1", "agent2"]
+        end
+      rescue
+        e ->
+          # In case the server is not available (e.g., during tests or standalone usage)
+          Logger.warning("Error getting validators from BlockchainServer: #{inspect(e)}")
+          # Fallback validators for tests or when server is down
+          ["agent1", "agent2"]
       end
-    rescue
-      e ->
-        # In case the server is not available (e.g., during tests or standalone usage)
-        Logger.warning("Error getting validators from BlockchainServer: #{inspect(e)}")
-        ["agent1", "agent2"] # Fallback validators for tests or when server is down
-    end
 
     Logger.info("TransactionQueue initialized with validators: #{inspect(validators)}")
 
@@ -162,20 +170,24 @@ defmodule Kylix.Server.TransactionQueue do
     new_queue = :queue.in(tx_data, state.queue)
 
     # Store initial pending status for this transaction
-    updated_statuses = Map.put(state.transaction_statuses, ref, %{
-      status: :pending,
-      submitted_at: now
-    })
+    updated_statuses =
+      Map.put(state.transaction_statuses, ref, %{
+        status: :pending,
+        submitted_at: now
+      })
 
     # Update state
-    new_state = %{state |
-      queue: new_queue,
-      transaction_statuses: updated_statuses,
-      stats: %{state.stats | submitted: state.stats.submitted + 1}
+    new_state = %{
+      state
+      | queue: new_queue,
+        transaction_statuses: updated_statuses,
+        stats: %{state.stats | submitted: state.stats.submitted + 1}
     }
 
     # Log submission
-    Logger.info("Transaction queued with ref #{inspect(ref)}, queue length: #{:queue.len(new_queue)}")
+    Logger.info(
+      "Transaction queued with ref #{inspect(ref)}, queue length: #{:queue.len(new_queue)}"
+    )
 
     {:reply, {:ok, ref}, new_state}
   end
@@ -204,50 +216,66 @@ defmodule Kylix.Server.TransactionQueue do
               tx_data = Map.put(tx_data, :validator_id, current_validator)
 
               # Process transaction
-              result = try do
-                Kylix.BlockchainServer.add_transaction(
-                  tx_data.subject,
-                  tx_data.predicate,
-                  tx_data.object,
-                  tx_data.validator_id,
-                  tx_data.signature
-                )
-              rescue
-                e ->
-                  Logger.error("Error processing transaction: #{inspect(e)}")
-                  {:error, :processing_failed}
-              end
+              result =
+                try do
+                  Kylix.BlockchainServer.add_transaction(
+                    tx_data.subject,
+                    tx_data.predicate,
+                    tx_data.object,
+                    tx_data.validator_id,
+                    tx_data.signature
+                  )
+                rescue
+                  e ->
+                    Logger.error("Error processing transaction: #{inspect(e)}")
+                    {:error, :processing_failed}
+                end
 
               # Update transaction status
               now = DateTime.utc_now()
-              updated_statuses = Map.put(state.transaction_statuses, ref, %{
-                result: result,
-                completed_at: now
-              })
+
+              updated_statuses =
+                Map.update(
+                  state.transaction_statuses,
+                  ref,
+                  %{
+                    status: :completed,
+                    result: result,
+                    completed_at: now
+                  },
+                  fn existing ->
+                    Map.merge(existing, %{
+                      status: :completed,
+                      result: result,
+                      completed_at: now
+                    })
+                  end
+                )
 
               # Update stats
-              new_stats = case result do
-                {:ok, _} ->
-                  %{state.stats |
-                    processed: state.stats.processed + 1,
-                    last_processed_at: now
-                  }
+              new_stats =
+                case result do
+                  {:ok, _} ->
+                    %{state.stats | processed: state.stats.processed + 1, last_processed_at: now}
 
-                {:error, _} ->
-                  %{state.stats |
-                    processed: state.stats.processed + 1,
-                    failed: state.stats.failed + 1,
-                    last_processed_at: now
-                  }
-              end
+                  {:error, _} ->
+                    %{
+                      state.stats
+                      | processed: state.stats.processed + 1,
+                        failed: state.stats.failed + 1,
+                        last_processed_at: now
+                    }
+                end
 
               # Update state
               next_index = rem(state.current_validator_index + 1, length(state.validators))
-              new_state = %{state |
-                queue: new_queue,
-                current_validator_index: next_index,
-                transaction_statuses: updated_statuses,
-                stats: new_stats
+
+              new_state = %{
+                state
+                | queue: new_queue,
+                  current_validator_index: next_index,
+                  transaction_statuses: updated_statuses,
+                  stats: new_stats
               }
 
               {:reply, result, new_state}
@@ -277,10 +305,7 @@ defmodule Kylix.Server.TransactionQueue do
 
   @impl true
   def handle_call({:set_rate, batch_size, interval_ms}, _from, state) do
-    new_state = %{state |
-      batch_size: batch_size,
-      processing_interval: interval_ms
-    }
+    new_state = %{state | batch_size: batch_size, processing_interval: interval_ms}
 
     Logger.info("Transaction processing rate changed to #{batch_size} per #{interval_ms}ms")
 
@@ -289,15 +314,16 @@ defmodule Kylix.Server.TransactionQueue do
 
   @impl true
   def handle_call(:clear, _from, state) do
-    new_state = %{state |
-      queue: :queue.new(),
-      transaction_statuses: %{},
-      stats: %{
-        submitted: 0,
-        processed: 0,
-        failed: 0,
-        last_processed_at: nil
-      }
+    new_state = %{
+      state
+      | queue: :queue.new(),
+        transaction_statuses: %{},
+        stats: %{
+          submitted: 0,
+          processed: 0,
+          failed: 0,
+          last_processed_at: nil
+        }
     }
 
     Logger.info("Transaction queue cleared")
@@ -319,27 +345,30 @@ defmodule Kylix.Server.TransactionQueue do
     Logger.debug("Process batch message received, queue length: #{:queue.len(state.queue)}")
 
     # Process a batch of transactions if queue is not empty
-    result = if :queue.is_empty(state.queue) do
-      Logger.debug("Queue is empty, nothing to process")
-      {state, 0}
-    else
-      # Mark as processing
-      state = %{state | processing: true}
-      Logger.info("Starting to process batch, queue length: #{:queue.len(state.queue)}")
-
-      # Process a batch
-      batch_size = min(state.batch_size, :queue.len(state.queue))
-      {new_state, processed_count} = process_batch(state, batch_size)
-
-      # Log progress
-      if processed_count > 0 do
-        Logger.info("Processed #{processed_count} transactions, remaining: #{:queue.len(new_state.queue)}")
+    result =
+      if :queue.is_empty(state.queue) do
+        Logger.debug("Queue is empty, nothing to process")
+        {state, 0}
       else
-        Logger.warning("Batch processing completed but no transactions were processed")
-      end
+        # Mark as processing
+        state = %{state | processing: true}
+        Logger.info("Starting to process batch, queue length: #{:queue.len(state.queue)}")
 
-      {new_state, processed_count}
-    end
+        # Process a batch
+        batch_size = min(state.batch_size, :queue.len(state.queue))
+        {new_state, processed_count} = process_batch(state, batch_size)
+
+        # Log progress
+        if processed_count > 0 do
+          Logger.info(
+            "Processed #{processed_count} transactions, remaining: #{:queue.len(new_state.queue)}"
+          )
+        else
+          Logger.warning("Batch processing completed but no transactions were processed")
+        end
+
+        {new_state, processed_count}
+      end
 
     # Extract values from the result
     {new_state, processed_count} = result
@@ -362,33 +391,43 @@ defmodule Kylix.Server.TransactionQueue do
     Logger.info("Received transaction result for ref #{inspect(ref)}: #{inspect(result)}")
 
     # Update transaction status for this specific reference
-    updated_statuses = Map.put(state.transaction_statuses, ref, %{
-      result: result,
-      completed_at: now
-    })
+    updated_statuses =
+      Map.update(
+        state.transaction_statuses,
+        ref,
+        %{
+          status: :completed,
+          result: result,
+          completed_at: now
+        },
+        fn existing ->
+          Map.merge(existing, %{
+            status: :completed,
+            result: result,
+            completed_at: now
+          })
+        end
+      )
 
     # Update stats based on result
-    new_stats = case result do
-      {:ok, tx_id} ->
-        Logger.info("Transaction #{inspect(ref)} completed successfully with ID: #{tx_id}")
-        %{state.stats |
-          processed: state.stats.processed + 1,
-          last_processed_at: now
-        }
+    new_stats =
+      case result do
+        {:ok, tx_id} ->
+          Logger.info("Transaction #{inspect(ref)} completed successfully with ID: #{tx_id}")
+          %{state.stats | processed: state.stats.processed + 1, last_processed_at: now}
 
-      {:error, reason} ->
-        Logger.warning("Transaction #{inspect(ref)} failed: #{inspect(reason)}")
-        %{state.stats |
-          processed: state.stats.processed + 1,
-          failed: state.stats.failed + 1,
-          last_processed_at: now
-        }
-    end
+        {:error, reason} ->
+          Logger.warning("Transaction #{inspect(ref)} failed: #{inspect(reason)}")
 
-    {:noreply, %{state |
-      stats: new_stats,
-      transaction_statuses: updated_statuses
-    }}
+          %{
+            state.stats
+            | processed: state.stats.processed + 1,
+              failed: state.stats.failed + 1,
+              last_processed_at: now
+          }
+      end
+
+    {:noreply, %{state | stats: new_stats, transaction_statuses: updated_statuses}}
   end
 
   # Helper functions
@@ -437,18 +476,24 @@ defmodule Kylix.Server.TransactionQueue do
   end
 
   defp process_batch(state, 0), do: {state, 0}
+
   defp process_batch(state, batch_size) do
     Logger.debug("Processing batch of size #{batch_size}")
+
     Enum.reduce(1..batch_size, {state, 0}, fn i, {current_state, count} ->
       Logger.debug("Processing transaction #{i} of #{batch_size}")
+
       case :queue.out(current_state.queue) do
         {{:value, tx_data}, new_queue} ->
           # Get the current validator based on round-robin
-          current_validator = Enum.at(current_state.validators, current_state.current_validator_index)
+          current_validator =
+            Enum.at(current_state.validators, current_state.current_validator_index)
+
           Logger.debug("Using validator: #{current_validator} for transaction #{i}")
 
           # Update validator index (round-robin)
-          next_index = rem(current_state.current_validator_index + 1, length(current_state.validators))
+          next_index =
+            rem(current_state.current_validator_index + 1, length(current_state.validators))
 
           # Process transaction in this process to avoid losing results
           # This is the KEY change - process directly instead of spawning
@@ -456,54 +501,73 @@ defmodule Kylix.Server.TransactionQueue do
           ref = tx_data.ref
 
           # Process the transaction
-          result = try do
-            Kylix.BlockchainServer.add_transaction(
-              tx_data.subject,
-              tx_data.predicate,
-              tx_data.object,
-              tx_data.validator_id,
-              tx_data.signature
-            )
-          rescue
-            e ->
-              Logger.error("Error processing transaction #{inspect(ref)}: #{inspect(e)}")
-              {:error, :processing_error}
-          catch
-            kind, reason ->
-              Logger.error("Transaction processing caught #{kind}: #{inspect(reason)}")
-              {:error, :processing_exception}
-          end
+          result =
+            try do
+              Kylix.BlockchainServer.add_transaction(
+                tx_data.subject,
+                tx_data.predicate,
+                tx_data.object,
+                tx_data.validator_id,
+                tx_data.signature
+              )
+            rescue
+              e ->
+                Logger.error("Error processing transaction #{inspect(ref)}: #{inspect(e)}")
+                {:error, :processing_error}
+            catch
+              kind, reason ->
+                Logger.error("Transaction processing caught #{kind}: #{inspect(reason)}")
+                {:error, :processing_exception}
+            end
 
           # Update transaction status directly
           now = DateTime.utc_now()
-          updated_statuses = Map.put(current_state.transaction_statuses, ref, %{
-            result: result,
-            completed_at: now
-          })
+
+          updated_statuses =
+            Map.update(
+              current_state.transaction_statuses,
+              ref,
+              %{
+                status: :completed,
+                result: result,
+                completed_at: now
+              },
+              fn existing ->
+                Map.merge(existing, %{
+                  status: :completed,
+                  result: result,
+                  completed_at: now
+                })
+              end
+            )
 
           # Update stats based on result
-          new_stats = case result do
-            {:ok, _tx_id} ->
-              %{current_state.stats |
-                processed: current_state.stats.processed + 1,
-                last_processed_at: now
-              }
+          new_stats =
+            case result do
+              {:ok, _tx_id} ->
+                %{
+                  current_state.stats
+                  | processed: current_state.stats.processed + 1,
+                    last_processed_at: now
+                }
 
-            {:error, _reason} ->
-              %{current_state.stats |
-                processed: current_state.stats.processed + 1,
-                failed: current_state.stats.failed + 1,
-                last_processed_at: now
-              }
-          end
+              {:error, _reason} ->
+                %{
+                  current_state.stats
+                  | processed: current_state.stats.processed + 1,
+                    failed: current_state.stats.failed + 1,
+                    last_processed_at: now
+                }
+            end
 
           # Return updated state
-          {%{current_state |
-            queue: new_queue,
-            current_validator_index: next_index,
-            transaction_statuses: updated_statuses,
-            stats: new_stats
-          }, count + 1}
+          {%{
+             current_state
+             | queue: new_queue,
+               current_validator_index: next_index,
+               transaction_statuses: updated_statuses,
+               stats: new_stats
+           }, count + 1}
 
         {:empty, _} ->
           # Queue is empty, stop processing
