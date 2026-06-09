@@ -177,4 +177,40 @@ defmodule Kylix.Storage.DAGEngineTest do
       assert results == []
     end
   end
+
+  describe "clear_all operations" do
+    test "clear_all removes all nodes and edges from the graph" do
+      # Add nodes and edges first
+      DAGEngine.add_node("node1", %{subject: "A", predicate: "knows", object: "B"})
+      DAGEngine.add_node("node2", %{subject: "C", predicate: "likes", object: "D"})
+      DAGEngine.add_edge("node1", "node2", "connected")
+
+      # Verify they exist
+      assert length(DAGEngine.get_all_nodes()) == 2
+      {:ok, results} = DAGEngine.query({nil, nil, nil})
+      assert length(results) == 2
+
+      # Find node1 to check its edge
+      node1_result = Enum.find(results, fn {id, _, _} -> id == "node1" end)
+      assert node1_result != nil
+      {_, _, edges} = node1_result
+      assert length(edges) == 1
+
+      # Call clear_all
+      assert :ok = DAGEngine.clear_all()
+
+      # Verify everything is gone
+      assert DAGEngine.get_all_nodes() == []
+      assert :not_found = DAGEngine.get_node("node1")
+      assert :not_found = DAGEngine.get_node("node2")
+
+      # Verify queries return nothing, indicating indexes and edge tables are cleared
+      {:ok, post_clear_results} = DAGEngine.query({nil, nil, nil})
+      assert post_clear_results == []
+
+      # Test adding new items after clear_all
+      DAGEngine.add_node("new_node", %{key: "new_value"})
+      assert length(DAGEngine.get_all_nodes()) == 1
+    end
+  end
 end
