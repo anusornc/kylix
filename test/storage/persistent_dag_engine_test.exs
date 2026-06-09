@@ -265,6 +265,37 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
     end
   end
 
+  describe "handle_info/2 for cache_cleanup" do
+    test "removes expired cache entries and keeps valid ones" do
+      now = System.system_time(:second)
+
+      # 300 seconds is the TTL
+      valid_timestamp = now - 100
+      expired_timestamp = now - 400
+
+      query_cache = %{
+        "valid_key" => {{"valid_result"}, valid_timestamp},
+        "expired_key" => {{"expired_result"}, expired_timestamp}
+      }
+
+      state = %{
+        db_path: @test_db_path,
+        metadata: %{},
+        cache: %{},
+        query_cache: query_cache
+      }
+
+      assert {:noreply, new_state} = PersistentDAGEngine.handle_info(:cache_cleanup, state)
+
+      # Check that the valid key was kept
+      assert Map.has_key?(new_state.query_cache, "valid_key")
+      assert new_state.query_cache["valid_key"] == {{"valid_result"}, valid_timestamp}
+
+      # Check that the expired key was removed
+      refute Map.has_key?(new_state.query_cache, "expired_key")
+    end
+  end
+
   describe "persistence and recovery" do
     test "data survives process restart" do
       # Add test data
