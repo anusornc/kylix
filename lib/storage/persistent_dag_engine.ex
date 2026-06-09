@@ -77,7 +77,7 @@ defmodule Kylix.Storage.PersistentDAGEngine do
       # Load existing metadata
       metadata_path
       |> File.read!()
-      |> :erlang.binary_to_term()
+      |> :erlang.binary_to_term([:safe])
     else
       # Initialize new metadata
       %{
@@ -124,7 +124,7 @@ defmodule Kylix.Storage.PersistentDAGEngine do
           node_data =
             Path.join(nodes_dir, file)
             |> File.read!()
-            |> :erlang.binary_to_term()
+            |> :erlang.binary_to_term([:safe])
 
           Map.put(acc, node_id, node_data)
         end)
@@ -144,7 +144,7 @@ defmodule Kylix.Storage.PersistentDAGEngine do
           edge_data =
             Path.join(edges_dir, file)
             |> File.read!()
-            |> :erlang.binary_to_term()
+            |> :erlang.binary_to_term([:safe])
 
           case edge_data do
             {from_id, to_id, label} ->
@@ -262,7 +262,7 @@ defmodule Kylix.Storage.PersistentDAGEngine do
           # Read from disk and parse
           node_data =
             File.read!(node_path)
-            |> :erlang.binary_to_term()
+            |> :erlang.binary_to_term([:safe])
 
           # Update cache with this node
           new_cache = %{state.cache | nodes: Map.put(state.cache.nodes, node_id, node_data)}
@@ -301,7 +301,7 @@ defmodule Kylix.Storage.PersistentDAGEngine do
             node_data =
               Path.join([state.db_path, @nodes_dir, file])
               |> File.read!()
-              |> :erlang.binary_to_term()
+              |> :erlang.binary_to_term([:safe])
 
             {node_id, node_data}
           end
