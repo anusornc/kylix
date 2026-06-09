@@ -68,6 +68,33 @@ defmodule KylixTest do
     end
   end
 
+  describe "validator management functions" do
+    test "get_current_validator returns a validator string" do
+      validator = Kylix.get_current_validator()
+      assert is_binary(validator)
+      assert validator in Kylix.get_validators()
+    end
+
+    test "get_validator_metrics returns metrics for all validators" do
+      metrics = Kylix.get_validator_metrics()
+      assert is_map(metrics)
+      validators = Kylix.get_validators()
+      for validator <- validators do
+        assert Map.has_key?(metrics, validator)
+        assert is_map(metrics[validator])
+      end
+    end
+
+    test "get_validator_status returns status information map" do
+      status = Kylix.get_validator_status()
+      assert is_map(status)
+      assert Map.has_key?(status, :validators)
+      assert Map.has_key?(status, :current_validator)
+      assert Map.has_key?(status, :performance_metrics)
+      assert is_list(status.validators)
+    end
+  end
+
   defp get_test_key_pair() do
     GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
   end
