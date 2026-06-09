@@ -29,6 +29,42 @@ defmodule Kylix.Storage.DAGEngineTest do
     :ok
   end
 
+  describe "init/1" do
+    test "initializes ets tables correctly" do
+      # We need to stop the DAGEngine started in setup so we can test init/1
+      # which creates named ETS tables that would otherwise conflict
+      if Process.whereis(DAGEngine) do
+        GenServer.stop(DAGEngine)
+      end
+
+      # Sometimes GenServer.stop doesn't immediately garbage collect the tables,
+      # or they might have been created independently. Let's explicitly delete them
+      # to ensure a clean slate before testing `init/1`
+      for table <- [:dag_nodes, :dag_edges, :subject_index, :predicate_index, :object_index] do
+        if :ets.info(table) != :undefined do
+          :ets.delete(table)
+        end
+      end
+
+      # Now call init directly
+      assert {:ok, %{}} = DAGEngine.init([])
+
+      # Verify tables were created
+      assert :ets.info(:dag_nodes) != :undefined
+      assert :ets.info(:dag_edges) != :undefined
+      assert :ets.info(:subject_index) != :undefined
+      assert :ets.info(:predicate_index) != :undefined
+      assert :ets.info(:object_index) != :undefined
+
+      # Clean up the tables created by our direct init call
+      :ets.delete(:dag_nodes)
+      :ets.delete(:dag_edges)
+      :ets.delete(:subject_index)
+      :ets.delete(:predicate_index)
+      :ets.delete(:object_index)
+    end
+  end
+
   describe "node operations" do
     test "add_node adds a node to the graph" do
       node_id = "test_node_1"
