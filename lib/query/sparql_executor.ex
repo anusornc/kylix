@@ -543,36 +543,9 @@ defmodule Kylix.Query.SparqlExecutor do
       # Default projected key is the variable name without '?'
       proj_key = String.trim_leading(var_with_q_mark, "?")
       
-      # Find the value for this variable from the binding information
-      value = 
-        cond do
-          # 1. Best case: binding has the full variable name (e.g., "?entity")
-          Map.has_key?(binding, var_with_q_mark) ->
-            Map.get(binding, var_with_q_mark)
-          
-          # 2. Next best: binding has the base variable name (e.g., "entity")
-          #    This covers cases where VariableMapper added role names that match SELECT vars.
-          Map.has_key?(binding, proj_key) ->
-            Map.get(binding, proj_key)
-            
-          # 3. Fallback: check if it's a standard position "s", "p", "o" if proj_key matches.
-          #    This is less likely if VariableMapper and merge_bindings are working well.
-          #    This section might be too aggressive or redundant if VariableMapper/merge_bindings are correct.
-          #    For example, if SELECT has "?s", proj_key will be "s".
-          #    If binding has {"?s" => val_from_var_s, "s" => val_from_raw_s}, this logic needs care.
-          #    The primary source should be the variable name binding.
-          #    Let's simplify this fallback or ensure it doesn't clash.
-          #    If proj_key is "s" and s_var_name_in_pattern from merge_bindings was different,
-          #    then binding["s"] might be raw data, not the variable's value.
-          #    Given current merge_bindings, binding keys are already the correct variable names.
-          #    So steps 1 and 2 should be sufficient if merge_bindings correctly uses pattern variables.
-          #    The original code had a fallback to "s", "p", "o" based on var_positions,
-          #    which is not directly used here in the same way.
-
-          # Simplified fallback logic: If not found by full or base name, it's nil.
-          # The s/p/o fallback is removed as merge_bindings should place values under their correct variable names.
-          true -> nil
-        end
+      # Find the value for this variable from the binding information.
+      # First try the full variable name with '?' prefix, then fallback to just the base name.
+      value = Map.get(binding, var_with_q_mark, Map.get(binding, proj_key))
         
       Map.put(projected_map, proj_key, value)
     end)
