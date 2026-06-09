@@ -126,8 +126,6 @@ defmodule Kylix.Server.TransactionQueueTest do
     assert TransactionQueue.get_transaction_status(unknown_ref) == nil
   end
 
-  # Fix for the failing test
-  # Fix for the failing test
   test "transaction status updates via direct message", %{queue_pid: pid} do
     # Generate a reference directly instead of submitting a transaction
     ref = make_ref()
@@ -165,6 +163,8 @@ defmodule Kylix.Server.TransactionQueueTest do
     assert Map.has_key?(final_status, :result)
     assert final_status.result == {:ok, "test_tx_id"}
     assert Map.has_key?(final_status, :completed_at)
+    assert final_status.status == :completed
+    assert final_status.submitted_at == now
   end
 
   # Test that transactions are processed asynchronously with real keys
