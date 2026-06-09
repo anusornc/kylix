@@ -265,6 +265,51 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
     end
   end
 
+  describe "checkpoint operations" do
+    test "checkpoint/1 updates last_checkpoint and saves metadata" do
+      # Create initial state for testing the pure function
+      past_time = DateTime.utc_now() |> DateTime.add(-3600, :second)
+
+      initial_metadata = %{
+        last_node_id: "test_node_id",
+        node_count: 5,
+        edge_count: 3,
+        last_checkpoint: past_time
+      }
+
+      state = %{
+        db_path: @test_db_path,
+        metadata: initial_metadata,
+        cache: %{nodes: %{}, edges: %{}},
+        query_cache: %{}
+      }
+
+      # Call the checkpoint function
+      updated_state = PersistentDAGEngine.checkpoint(state)
+
+      # Verify the state's metadata was updated with a newer checkpoint time
+      assert DateTime.compare(updated_state.metadata.last_checkpoint, past_time) == :gt
+
+      # Verify other metadata fields remain unchanged
+      assert updated_state.metadata.last_node_id == "test_node_id"
+      assert updated_state.metadata.node_count == 5
+      assert updated_state.metadata.edge_count == 3
+
+      # Verify the metadata was actually saved to disk
+      metadata_path = Path.join(@test_db_path, "metadata.bin")
+      assert File.exists?(metadata_path)
+
+      saved_metadata =
+        metadata_path
+        |> File.read!()
+        |> :erlang.binary_to_term()
+
+      assert saved_metadata.last_node_id == "test_node_id"
+      assert saved_metadata.node_count == 5
+      assert DateTime.compare(saved_metadata.last_checkpoint, past_time) == :gt
+    end
+  end
+
   describe "persistence and recovery" do
     test "data survives process restart" do
       # Add test data
