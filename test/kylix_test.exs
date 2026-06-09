@@ -19,6 +19,29 @@ defmodule KylixTest do
 
   end
 
+  describe "add validator" do
+    test "add validator successfully" do
+      # Assuming "agent1" is a valid initial validator per test setup
+      validator_id = "agent99"
+      pubkey = "dummy_pubkey_content"
+      known_by = "agent1"
+
+      assert {:ok, ^validator_id} = Kylix.add_validator(validator_id, pubkey, known_by)
+
+      # Verify it's added
+      validators = Kylix.get_validators()
+      assert Enum.member?(validators, validator_id)
+    end
+
+    test "add validator with unknown known_by validator" do
+      validator_id = "agent99"
+      pubkey = "dummy_pubkey_content"
+      known_by = "unknown_agent"
+
+      assert {:error, :unknown_validator} = Kylix.add_validator(validator_id, pubkey, known_by)
+    end
+  end
+
   describe "add transaction with valid validator and signature" do
     test "add transaction with valid validator and signature", %{private_key: private_key} do
       # Create a unique subject to avoid duplicate transaction errors
