@@ -68,6 +68,17 @@ defmodule KylixTest do
     end
   end
 
+  describe "get_current_validator/0" do
+    test "returns a valid validator from the available validators" do
+      validators = Kylix.get_validators()
+      assert is_list(validators)
+      assert length(validators) > 0
+
+      current = Kylix.get_current_validator()
+      assert current in validators
+    end
+  end
+
   defp get_test_key_pair() do
     GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
   end
