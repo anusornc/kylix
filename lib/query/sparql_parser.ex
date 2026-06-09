@@ -176,7 +176,12 @@ defmodule Kylix.Query.SparqlParser do
       ])
       |> ignore(optional_whitespace)
     )
-    |> lookahead_not(string("GROUP BY") |> string("ORDER BY") |> string("LIMIT") |> string("OFFSET"))
+    |> lookahead_not(
+      string("GROUP BY")
+      |> string("ORDER BY")
+      |> string("LIMIT")
+      |> string("OFFSET")
+    )
     |> tag(:patterns)
 
   defcombinatorp(:inner_patterns_list, inner_patterns_list)
@@ -322,9 +327,11 @@ defmodule Kylix.Query.SparqlParser do
   """
   def parse(query) do
     IO.inspect(query, label: "Raw query input to parser")
+
     try do
       normalized_query = normalize_query(query)
       Logger.debug("Parsing query: #{normalized_query}")
+
       case parse_query(normalized_query) do
         {:ok, parsed, "", _, _, _} ->
           IO.inspect(parsed, label: "Parsed before conversion")
@@ -395,7 +402,7 @@ defmodule Kylix.Query.SparqlParser do
           end
 
         agg = %{
-          function: String.downcase(function) |> String.to_atom(),
+          function: parse_aggregate_function(function),
           variable: var,
           distinct: distinct,
           alias: alias_var
@@ -406,6 +413,38 @@ defmodule Kylix.Query.SparqlParser do
       _, acc ->
         acc
     end)
+  end
+
+  defp parse_aggregate_function(function) do
+    case String.downcase(function) do
+      "count" ->
+        :count
+
+      "sum" ->
+        :sum
+
+      "min" ->
+        :min
+
+      "max" ->
+        :max
+
+      "avg" ->
+        :avg
+
+      "group_concat" ->
+        :group_concat
+
+      other ->
+        try do
+          String.to_existing_atom(other)
+        rescue
+          ArgumentError ->
+            # Raise a more descriptive error instead of creating a new atom
+            # to prevent atom exhaustion on malicious inputs
+            raise ArgumentError, "Unsupported or unknown aggregate function: #{function}"
+        end
+    end
   end
 
   defp process_where_clause(where_items) do
