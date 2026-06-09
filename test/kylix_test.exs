@@ -68,6 +68,38 @@ defmodule KylixTest do
     end
   end
 
+  describe "validator management" do
+    test "get_current_validator returns a validator ID" do
+      validator = Kylix.get_current_validator()
+      assert is_binary(validator)
+      assert validator in ["agent1", "agent2"]
+    end
+
+    test "get_validator_metrics returns a map of metrics" do
+      metrics = Kylix.get_validator_metrics()
+      assert is_map(metrics)
+
+      # Since we're in test env, we should have metrics for agent1 and agent2
+      assert Map.has_key?(metrics, "agent1")
+      assert Map.has_key?(metrics, "agent2")
+
+      agent1_metrics = metrics["agent1"]
+      assert is_map(agent1_metrics)
+      assert Map.has_key?(agent1_metrics, :total_transactions)
+      assert Map.has_key?(agent1_metrics, :successful_transactions)
+    end
+
+    test "get_validator_status returns coordination status" do
+      status = Kylix.get_validator_status()
+      assert is_map(status)
+      assert Map.has_key?(status, :validators)
+      assert Map.has_key?(status, :current_validator)
+      assert Map.has_key?(status, :total_validators)
+      assert is_list(status.validators)
+      assert status.total_validators == length(status.validators)
+    end
+  end
+
   defp get_test_key_pair() do
     GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
   end
