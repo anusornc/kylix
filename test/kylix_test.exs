@@ -68,6 +68,17 @@ defmodule KylixTest do
     end
   end
 
+  describe "get_queue_status/0" do
+    test "returns the current status of the transaction queue" do
+      status = Kylix.get_queue_status()
+      assert is_map(status)
+      assert Map.has_key?(status, :queue_length)
+      assert Map.has_key?(status, :processing)
+      assert Map.has_key?(status, :stats)
+      assert is_map(status.stats)
+    end
+  end
+
   defp get_test_key_pair() do
     GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
   end
