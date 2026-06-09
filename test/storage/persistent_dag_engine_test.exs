@@ -39,6 +39,52 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
   end
 
   describe "node operations" do
+    test "handle_call for :add_node directly handles valid and invalid data" do
+      # Setup a dummy state
+      dummy_state = %{
+        db_path: @test_db_path,
+        metadata: %{
+          last_node_id: nil,
+          node_count: 0,
+          edge_count: 0,
+          last_checkpoint: DateTime.utc_now()
+        },
+        cache: %{
+          nodes: %{},
+          edges: %{}
+        },
+        query_cache: %{}
+      }
+
+      node_id = "direct_test_node"
+      valid_data = %{value: "direct"}
+
+      # Test valid data
+      assert {:reply, :ok, new_state} =
+               PersistentDAGEngine.handle_call({:add_node, node_id, valid_data}, nil, dummy_state)
+
+      # Verify state updates
+      assert Map.has_key?(new_state.cache.nodes, node_id)
+      assert new_state.metadata.node_count == 1
+      assert new_state.metadata.last_node_id == node_id
+      assert new_state.query_cache == %{}
+
+      # Verify disk write
+      node_path = Path.join([@test_db_path, "nodes", "#{node_id}.bin"])
+      assert File.exists?(node_path)
+      assert File.read!(node_path) |> :erlang.binary_to_term() == valid_data
+
+      # Test invalid data
+      invalid_node_id = "direct_invalid_node"
+      invalid_data = "not a map"
+      assert {:reply, {:error, :invalid_data}, ^dummy_state} =
+               PersistentDAGEngine.handle_call({:add_node, invalid_node_id, invalid_data}, nil, dummy_state)
+
+      # Verify no disk write for invalid data
+      invalid_node_path = Path.join([@test_db_path, "nodes", "#{invalid_node_id}.bin"])
+      refute File.exists?(invalid_node_path)
+    end
+
     test "add_node persists a node to disk" do
       node_id = "test_node_1"
       data = %{key: "value", number: 42}
