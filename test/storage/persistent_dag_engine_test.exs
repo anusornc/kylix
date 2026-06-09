@@ -74,16 +74,19 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       refute File.exists?(node_path)
     end
 
+    test "get_node returns :not_found for non-existent node" do
+      assert :not_found = PersistentDAGEngine.get_node("non_existent_node")
+    end
+
     test "get_node reads from disk if not in cache" do
       node_id = "test_node_disk"
       data = %{source: "disk_stored"}
 
-      # Add node
-      assert :ok = PersistentDAGEngine.add_node(node_id, data)
-
-      # Restart the application to clear the cache
-      :ok = Application.stop(:kylix)
-      {:ok, _} = Application.ensure_all_started(:kylix)
+      # Directly write to disk to ensure it's not in the GenServer's cache
+      node_path = Path.join([@test_db_path, "nodes", "#{node_id}.bin"])
+      File.mkdir_p!(Path.dirname(node_path))
+      serialized_data = :erlang.term_to_binary(data)
+      File.write!(node_path, serialized_data)
 
       # Get the node - should be read from disk
       assert {:ok, ^data} = PersistentDAGEngine.get_node(node_id)
