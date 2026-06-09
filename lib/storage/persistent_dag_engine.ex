@@ -290,23 +290,42 @@ defmodule Kylix.Storage.PersistentDAGEngine do
 
     nodes_on_disk =
       if File.exists?(nodes_dir) && File.dir?(nodes_dir) do
-        nodes_dir
-        |> File.ls!()
-        |> Enum.map(fn file ->
-          node_id = Path.rootname(file)
+        files = File.ls!(nodes_dir)
 
-          if Map.has_key?(nodes_in_cache, node_id) do
+        {cached_files, uncached_files} =
+          Enum.split_with(files, fn file ->
+            node_id = Path.rootname(file)
+            Map.has_key?(nodes_in_cache, node_id)
+          end)
+
+        cached_nodes =
+          Enum.map(cached_files, fn file ->
+            node_id = Path.rootname(file)
             {node_id, Map.get(nodes_in_cache, node_id)}
-          else
-            node_data =
-              Path.join([state.db_path, @nodes_dir, file])
-              |> File.read!()
-              |> :erlang.binary_to_term()
+          end)
 
-            {node_id, node_data}
-          end
-        end)
-        |> Map.new()
+        uncached_nodes =
+          uncached_files
+          |> Enum.chunk_every(500)
+          |> Task.async_stream(
+            fn chunk ->
+              Enum.map(chunk, fn file ->
+                node_id = Path.rootname(file)
+
+                node_data =
+                  Path.join([state.db_path, @nodes_dir, file])
+                  |> File.read!()
+                  |> :erlang.binary_to_term([:safe])
+
+                {node_id, node_data}
+              end)
+            end,
+            max_concurrency: System.schedulers_online(),
+            timeout: :infinity
+          )
+          |> Enum.flat_map(fn {:ok, results} -> results end)
+
+        Map.new(cached_nodes ++ uncached_nodes)
       else
         %{}
       end
