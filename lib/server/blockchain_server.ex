@@ -65,6 +65,12 @@ defmodule Kylix.BlockchainServer do
     GenServer.call(__MODULE__, {:query, pattern})
   end
 
+  # Get the current transaction count (equivalent to the current round)
+  @spec get_tx_count() :: non_neg_integer()
+  def get_tx_count() do
+    GenServer.call(__MODULE__, :get_tx_count)
+  end
+
   # Get the list of current validators in the blockchain
   # Returns a list of validator identifiers
   @spec get_validators() :: [String.t()]
@@ -115,6 +121,11 @@ defmodule Kylix.BlockchainServer do
   @impl true
   def handle_call(:get_test_key_pair, _from, state) do
     {:reply, {:ok, state.test_key_pair}, state}
+  end
+
+  @impl true
+  def handle_call(:get_tx_count, _from, state) do
+    {:reply, state.tx_count, state}
   end
 
   @impl true
