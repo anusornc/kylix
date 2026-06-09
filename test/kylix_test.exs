@@ -68,6 +68,19 @@ defmodule KylixTest do
     end
   end
 
+  describe "get validator status" do
+    test "get validator status returns expected status map" do
+      status = Kylix.get_validator_status()
+      assert is_map(status)
+      assert Map.has_key?(status, :validators)
+      assert Map.has_key?(status, :current_validator_index)
+      assert Map.has_key?(status, :current_validator)
+      assert Map.has_key?(status, :total_validators)
+      assert Map.has_key?(status, :performance_metrics)
+      assert Map.has_key?(status, :last_block_time)
+    end
+  end
+
   defp get_test_key_pair() do
     GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
   end
