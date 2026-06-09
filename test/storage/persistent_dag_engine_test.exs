@@ -32,6 +32,7 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       if Process.alive?(pid) do
         GenServer.stop(pid)
       end
+
       File.rm_rf!(@test_db_path)
     end)
 
@@ -106,6 +107,21 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       assert Enum.any?(nodes, fn {id, _} -> id == "node2" end)
       assert Enum.any?(nodes, fn {id, _} -> id == "node3" end)
     end
+
+    test "get_all_nodes reads from disk if not in cache" do
+      # Manually write a node to disk without going through add_node
+      # so it exists on disk but not in the GenServer cache
+      node_id = "node_disk_only"
+      data = %{data: "val_disk_only"}
+      node_path = Path.join([@test_db_path, "nodes", "#{node_id}.bin"])
+      serialized_data = :erlang.term_to_binary(data)
+      File.write!(node_path, serialized_data)
+
+      # Ensure get_all_nodes returns it by falling back to reading from disk
+      nodes = PersistentDAGEngine.get_all_nodes()
+
+      assert Enum.any?(nodes, fn {id, node_data} -> id == node_id and node_data == data end)
+    end
   end
 
   describe "edge operations" do
@@ -140,21 +156,26 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
 
       # Verify edge exists in query results
       assert Enum.any?(edges, fn {to, label} ->
-        to == "target" && label == "connects"
-      end)
+               to == "target" && label == "connects"
+             end)
     end
 
     test "add_edge fails if nodes don't exist" do
       # Try to add edge between non-existent nodes
-      assert {:error, :node_not_found} = PersistentDAGEngine.add_edge("missing_source", "missing_target", "label")
+      assert {:error, :node_not_found} =
+               PersistentDAGEngine.add_edge("missing_source", "missing_target", "label")
 
       # Add only source node
       PersistentDAGEngine.add_node("only_source", %{})
-      assert {:error, :node_not_found} = PersistentDAGEngine.add_edge("only_source", "missing_target", "label")
+
+      assert {:error, :node_not_found} =
+               PersistentDAGEngine.add_edge("only_source", "missing_target", "label")
 
       # Add only target node
       PersistentDAGEngine.add_node("only_target", %{})
-      assert {:error, :node_not_found} = PersistentDAGEngine.add_edge("missing_source", "only_target", "label")
+
+      assert {:error, :node_not_found} =
+               PersistentDAGEngine.add_edge("missing_source", "only_target", "label")
     end
 
     test "edges are loaded from disk on restart" do
@@ -171,12 +192,13 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       {:ok, results} = PersistentDAGEngine.query({nil, nil, nil})
 
       # Find edges in the results
-      edge_found = Enum.any?(results, fn {id, _, edges} ->
-        id == "source" &&
-        Enum.any?(edges, fn {to, label} ->
-          to == "target" && label == "connects"
+      edge_found =
+        Enum.any?(results, fn {id, _, edges} ->
+          id == "source" &&
+            Enum.any?(edges, fn {to, label} ->
+              to == "target" && label == "connects"
+            end)
         end)
-      end)
 
       assert edge_found
     end
@@ -186,8 +208,11 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
     setup do
       # Create a graph with triple-like structure for testing queries
       PersistentDAGEngine.add_node("tx1", %{subject: "Alice", predicate: "knows", object: "Bob"})
+
       PersistentDAGEngine.add_node("tx2", %{subject: "Alice", predicate: "likes", object: "Pizza"})
+
       PersistentDAGEngine.add_node("tx3", %{subject: "Bob", predicate: "knows", object: "Charlie"})
+
       PersistentDAGEngine.add_node("tx4", %{subject: "Bob", predicate: "likes", object: "Sushi"})
 
       # Add some edges
@@ -240,7 +265,8 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
 
     test "query with all wildcards" do
       {:ok, results} = PersistentDAGEngine.query({nil, nil, nil})
-      assert length(results) == 4  # Should return all four nodes
+      # Should return all four nodes
+      assert length(results) == 4
     end
 
     test "query with no matches" do
@@ -260,8 +286,8 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
 
       # Verify the edge from tx1 to tx2 exists
       assert Enum.any?(edges, fn {to, label} ->
-        to == "tx2" && label == "same_subject"
-      end)
+               to == "tx2" && label == "same_subject"
+             end)
     end
   end
 
