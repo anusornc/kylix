@@ -68,6 +68,31 @@ defmodule KylixTest do
     end
   end
 
+  describe "validator management" do
+    test "get_validators returns initial validators" do
+      validators = Kylix.get_validators()
+      assert is_list(validators)
+      assert "agent1" in validators
+      assert "agent2" in validators
+    end
+
+    test "add_validator adds a new validator and get_validators retrieves it" do
+      # Create a new test validator
+      new_validator_id = "agent3"
+
+      # Generate key pair for the new validator (using crypto module)
+      {public_key, _private_key} = :crypto.generate_key(:ecdh, :secp256k1)
+      pubkey_b64 = Base.encode64(public_key)
+
+      # Add validator
+      assert {:ok, _} = Kylix.add_validator(new_validator_id, pubkey_b64, "agent1")
+
+      # Verify it was added
+      validators = Kylix.get_validators()
+      assert new_validator_id in validators
+    end
+  end
+
   defp get_test_key_pair() do
     GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
   end
