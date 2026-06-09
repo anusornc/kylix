@@ -4,7 +4,7 @@ if config_env() == :prod do
   # Allow runtime configuration in production
   # This will let you set configuration via environment variables
 
-  # Example: DATABASE_PATH=xxx mix run
+  # Example: DATABASE_PATH=/path/to/db mix run
   if db_path = System.get_env("DATABASE_PATH") do
     config :kylix, db_path: db_path
   end
