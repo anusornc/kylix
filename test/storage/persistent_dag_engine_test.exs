@@ -265,6 +265,74 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
     end
   end
 
+  describe "handle_call for :add_edge" do
+    setup do
+      state = %{
+        db_path: @test_db_path,
+        metadata: %{
+          last_node_id: "test",
+          node_count: 2,
+          edge_count: 0,
+          last_checkpoint: DateTime.utc_now()
+        },
+        cache: %{
+          nodes: %{"node1" => %{v: 1}, "node2" => %{v: 2}},
+          edges: %{}
+        },
+        query_cache: %{"some_query" => {:result, 12345}}
+      }
+
+      # Create directories and metadata to mimic init
+      File.mkdir_p!(Path.join(@test_db_path, "nodes"))
+      File.mkdir_p!(Path.join(@test_db_path, "edges"))
+
+      metadata_path = Path.join(@test_db_path, "metadata.bin")
+      File.write!(metadata_path, :erlang.term_to_binary(state.metadata))
+
+      {:ok, %{direct_state: state}}
+    end
+
+    test "successfully adds an edge and updates state when nodes exist", %{direct_state: state} do
+      result = PersistentDAGEngine.handle_call({:add_edge, "node1", "node2", "connected"}, {self(), :tag}, state)
+
+      assert {:reply, :ok, new_state} = result
+
+      # Verify cache was updated
+      assert new_state.cache.edges["node1"] == [{"node2", "connected"}]
+
+      # Verify metadata was updated
+      assert new_state.metadata.edge_count == 1
+
+      # Verify query cache was invalidated
+      assert new_state.query_cache == %{}
+
+      # Verify edge was written to disk
+      edge_path = Path.join([@test_db_path, "edges", "node1_node2.bin"])
+      assert File.exists?(edge_path)
+
+      stored_edge =
+        edge_path
+        |> File.read!()
+        |> :erlang.binary_to_term()
+
+      assert stored_edge == {"node1", "node2", "connected"}
+    end
+
+    test "returns error when source node does not exist", %{direct_state: state} do
+      result = PersistentDAGEngine.handle_call({:add_edge, "missing", "node2", "connected"}, {self(), :tag}, state)
+
+      assert {:reply, {:error, :node_not_found}, returned_state} = result
+      assert returned_state == state
+    end
+
+    test "returns error when target node does not exist", %{direct_state: state} do
+      result = PersistentDAGEngine.handle_call({:add_edge, "node1", "missing", "connected"}, {self(), :tag}, state)
+
+      assert {:reply, {:error, :node_not_found}, returned_state} = result
+      assert returned_state == state
+    end
+  end
+
   describe "persistence and recovery" do
     test "data survives process restart" do
       # Add test data
