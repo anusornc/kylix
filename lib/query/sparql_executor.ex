@@ -526,19 +526,14 @@ defmodule Kylix.Query.SparqlExecutor do
     end
   end
 
-  defp project_variables(results, variables, query_structure) do
+  defp project_variables(results, variables, _query_structure) do
     projected = Enum.map(results, fn binding ->
-      create_projection(binding, variables, query_structure)
+      create_projection(binding, variables)
     end)
     {:ok, projected}
   end
 
-  defp create_projection(binding, variables_in_select, query_structure) do
-    # var_positions might be useful if populated by SparqlEngine using VariableMapper.extract_variable_positions
-    # For now, let's assume variables_in_select are like "?var"
-    # and binding contains results from merge_bindings which should have keys like "?var" and also "role" names.
-    _var_positions = Map.get(query_structure, :variable_positions, %{}) # Keep if needed later, suppress warning for now
-
+  defp create_projection(binding, variables_in_select) do
     Enum.reduce(variables_in_select, %{}, fn var_with_q_mark, projected_map ->
       # Default projected key is the variable name without '?'
       proj_key = String.trim_leading(var_with_q_mark, "?")
