@@ -124,20 +124,6 @@ defmodule Kylix.Demo.ValidatorCoordinatorDemo do
     end)
   end
 
-  # defp generate_test_keys(validators, dir) do
-  #   Enum.map(validators, fn validator ->
-  #     # Generate key pair
-  #     {:ok, pub_key, priv_key} = generate_key_pair()
-
-  #     # Save public key
-  #     pub_path = Path.join(dir, "#{validator}.pub")
-  #     File.write!(pub_path, pub_key)
-
-  #     # Return info
-  #     {validator, pub_key, priv_key}
-  #   end)
-  # end
-
   defp generate_key_pair do
     # Use the SignatureVerifier to generate a key pair
     case SignatureVerifier.generate_test_key_pair() do
