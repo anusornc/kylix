@@ -38,6 +38,55 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
     {:ok, %{pid: pid}}
   end
 
+  describe "init/1" do
+    test "creates directories and initializes empty state for a new database" do
+      new_db_path = "test/tmp/init_test_db"
+
+      on_exit(fn ->
+        File.rm_rf!(new_db_path)
+      end)
+
+      File.rm_rf!(new_db_path)
+
+      {:ok, state} = PersistentDAGEngine.init(db_path: new_db_path)
+
+      # Verify directories were created
+      assert File.exists?(Path.join(new_db_path, "nodes"))
+      assert File.exists?(Path.join(new_db_path, "edges"))
+
+      # Verify empty state
+      assert state.db_path == new_db_path
+      assert state.cache.nodes == %{}
+      assert state.cache.edges == %{}
+      assert state.metadata.node_count == 0
+      assert state.metadata.edge_count == 0
+      assert state.query_cache == %{}
+    end
+
+    test "loads existing data into cache on initialization" do
+      # Add data to the running GenServer which saves to @test_db_path
+      PersistentDAGEngine.add_node("init_node1", %{data: "val1"})
+      PersistentDAGEngine.add_node("init_node2", %{data: "val2"})
+      PersistentDAGEngine.add_edge("init_node1", "init_node2", "init_edge")
+
+      # Call init/1 directly to simulate startup with existing data
+      {:ok, state} = PersistentDAGEngine.init(db_path: @test_db_path)
+
+      # Verify cache loaded nodes
+      assert Map.has_key?(state.cache.nodes, "init_node1")
+      assert Map.has_key?(state.cache.nodes, "init_node2")
+      assert state.cache.nodes["init_node1"] == %{data: "val1"}
+
+      # Verify cache loaded edges
+      assert Map.has_key?(state.cache.edges, "init_node1")
+      assert [{"init_node2", "init_edge"}] = state.cache.edges["init_node1"]
+
+      # Verify metadata
+      assert state.metadata.node_count >= 2
+      assert state.metadata.edge_count >= 1
+    end
+  end
+
   describe "node operations" do
     test "add_node persists a node to disk" do
       node_id = "test_node_1"
