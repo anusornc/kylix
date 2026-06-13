@@ -251,9 +251,9 @@ defmodule Kylix.Query.SparqlExecutor do
             
             # Add optional fields if they exist in data
             current_result_with_optional = 
-              Enum.reduce([:validator, :timestamp], current_result_base, fn key, inner_acc ->
-                if Map.has_key?(data, key) do
-                  Map.put(inner_acc, Atom.to_string(key), Map.get(data, key))
+              Enum.reduce([{"validator", :validator}, {"timestamp", :timestamp}], current_result_base, fn {str_key, atom_key}, inner_acc ->
+                if Map.has_key?(data, atom_key) do
+                  Map.put(inner_acc, str_key, Map.get(data, atom_key))
                 else
                   inner_acc
                 end
