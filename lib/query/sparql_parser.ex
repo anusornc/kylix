@@ -394,8 +394,19 @@ defmodule Kylix.Query.SparqlParser do
             nil -> "#{String.downcase(function)}_#{var}"
           end
 
+        function_atom =
+          case String.downcase(function) do
+            "count" -> :count
+            "sum" -> :sum
+            "avg" -> :avg
+            "min" -> :min
+            "max" -> :max
+            "group_concat" -> :group_concat
+            _ -> :unknown_aggregate
+          end
+
         agg = %{
-          function: String.downcase(function) |> String.to_atom(),
+          function: function_atom,
           variable: var,
           distinct: distinct,
           alias: alias_var
