@@ -95,6 +95,15 @@ defmodule Kylix.Storage.PersistentDAGEngine do
     File.write!(metadata_path, serialized)
   end
 
+  defp secure_filename(id, ext \\ ".bin") do
+    filename = "#{id}#{ext}"
+    if not String.contains?(filename, "\0") and Path.basename(filename) == filename do
+      {:ok, filename}
+    else
+      {:error, :invalid_id}
+    end
+  end
+
   defp node_exists?(state, node_id) do
     # Check cache first
     case Map.has_key?(state.cache.nodes, node_id) do
@@ -103,8 +112,13 @@ defmodule Kylix.Storage.PersistentDAGEngine do
 
       false ->
         # Check disk
-        node_path = Path.join([state.db_path, @nodes_dir, "#{node_id}.bin"])
-        File.exists?(node_path)
+        case secure_filename(node_id) do
+          {:ok, filename} ->
+            node_path = Path.join([state.db_path, @nodes_dir, filename])
+            File.exists?(node_path)
+          {:error, _} ->
+            false
+        end
     end
   end
 
@@ -183,32 +197,39 @@ defmodule Kylix.Storage.PersistentDAGEngine do
       Logger.error("Data for node #{node_id} is not a map: #{inspect(data)}")
       {:reply, {:error, :invalid_data}, state}
     else
-      # Save node to disk
-      node_path = Path.join([state.db_path, @nodes_dir, "#{node_id}.bin"])
-      serialized_data = :erlang.term_to_binary(data)
-      :ok = File.write!(node_path, serialized_data)
+      case secure_filename(node_id) do
+        {:ok, filename} ->
+          # Save node to disk
+          node_path = Path.join([state.db_path, @nodes_dir, filename])
+          serialized_data = :erlang.term_to_binary(data)
+          :ok = File.write!(node_path, serialized_data)
 
-      # Update cache
-      new_cache = %{state.cache | nodes: Map.put(state.cache.nodes, node_id, data)}
+          # Update cache
+          new_cache = %{state.cache | nodes: Map.put(state.cache.nodes, node_id, data)}
 
-      # Update metadata
-      new_metadata = %{
-        state.metadata
-        | node_count: state.metadata.node_count + 1,
-          last_node_id: node_id
-      }
+          # Update metadata
+          new_metadata = %{
+            state.metadata
+            | node_count: state.metadata.node_count + 1,
+              last_node_id: node_id
+          }
 
-      # Save updated metadata
-      save_metadata(state.db_path, new_metadata)
+          # Save updated metadata
+          save_metadata(state.db_path, new_metadata)
 
-      # Update state
-      new_state = %{state | metadata: new_metadata, cache: new_cache}
+          # Update state
+          new_state = %{state | metadata: new_metadata, cache: new_cache}
 
-      # Invalidate query cache since data has changed
-      new_state = %{new_state | query_cache: %{}}
+          # Invalidate query cache since data has changed
+          new_state = %{new_state | query_cache: %{}}
 
-      Logger.info("Node #{node_id} persisted to disk")
-      {:reply, :ok, new_state}
+          Logger.info("Node #{node_id} persisted to disk")
+          {:reply, :ok, new_state}
+
+        {:error, _} ->
+          Logger.error("Invalid node ID for persistence: #{inspect(node_id)}")
+          {:reply, {:error, :invalid_id}, state}
+      end
     end
   end
 
@@ -223,28 +244,35 @@ defmodule Kylix.Storage.PersistentDAGEngine do
       # Create edge record
       edge_data = {from_id, to_id, label}
       edge_id = "#{from_id}_#{to_id}"
-      edge_path = Path.join([state.db_path, @edges_dir, "#{edge_id}.bin"])
 
-      # Save edge to disk
-      serialized_edge = :erlang.term_to_binary(edge_data)
-      :ok = File.write!(edge_path, serialized_edge)
+      case secure_filename(edge_id) do
+        {:ok, filename} ->
+          edge_path = Path.join([state.db_path, @edges_dir, filename])
 
-      # Update cache
-      edges_from = Map.get(state.cache.edges, from_id, [])
-      new_edges_from = [{to_id, label} | edges_from]
-      new_cache = %{state.cache | edges: Map.put(state.cache.edges, from_id, new_edges_from)}
+          # Save edge to disk
+          serialized_edge = :erlang.term_to_binary(edge_data)
+          :ok = File.write!(edge_path, serialized_edge)
 
-      # Update metadata
-      new_metadata = %{state.metadata | edge_count: state.metadata.edge_count + 1}
-      save_metadata(state.db_path, new_metadata)
+          # Update cache
+          edges_from = Map.get(state.cache.edges, from_id, [])
+          new_edges_from = [{to_id, label} | edges_from]
+          new_cache = %{state.cache | edges: Map.put(state.cache.edges, from_id, new_edges_from)}
 
-      # Update state
-      new_state = %{state | metadata: new_metadata, cache: new_cache}
+          # Update metadata
+          new_metadata = %{state.metadata | edge_count: state.metadata.edge_count + 1}
+          save_metadata(state.db_path, new_metadata)
 
-      # Invalidate query cache since data has changed
-      new_state = %{new_state | query_cache: %{}}
+          # Update state
+          new_state = %{state | metadata: new_metadata, cache: new_cache}
 
-      {:reply, :ok, new_state}
+          # Invalidate query cache since data has changed
+          new_state = %{new_state | query_cache: %{}}
+
+          {:reply, :ok, new_state}
+
+        {:error, _} ->
+          {:reply, {:error, :invalid_id}, state}
+      end
     else
       {:reply, {:error, :node_not_found}, state}
     end
@@ -256,22 +284,28 @@ defmodule Kylix.Storage.PersistentDAGEngine do
     case Map.get(state.cache.nodes, node_id) do
       nil ->
         # Not in cache, try to read from disk
-        node_path = Path.join([state.db_path, @nodes_dir, "#{node_id}.bin"])
+        case secure_filename(node_id) do
+          {:ok, filename} ->
+            node_path = Path.join([state.db_path, @nodes_dir, filename])
 
-        if File.exists?(node_path) do
-          # Read from disk and parse
-          node_data =
-            File.read!(node_path)
-            |> :erlang.binary_to_term()
+            if File.exists?(node_path) do
+              # Read from disk and parse
+              node_data =
+                File.read!(node_path)
+                |> :erlang.binary_to_term()
 
-          # Update cache with this node
-          new_cache = %{state.cache | nodes: Map.put(state.cache.nodes, node_id, node_data)}
-          new_state = %{state | cache: new_cache}
+              # Update cache with this node
+              new_cache = %{state.cache | nodes: Map.put(state.cache.nodes, node_id, node_data)}
+              new_state = %{state | cache: new_cache}
 
-          {:reply, {:ok, node_data}, new_state}
-        else
-          # Node doesn't exist
-          {:reply, :not_found, state}
+              {:reply, {:ok, node_data}, new_state}
+            else
+              # Node doesn't exist
+              {:reply, :not_found, state}
+            end
+
+          {:error, _} ->
+            {:reply, :not_found, state}
         end
 
       data ->

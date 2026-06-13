@@ -62,6 +62,17 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       assert stored_data == data
     end
 
+    test "add_node prevents path traversal" do
+      node_id = "../../../malicious_node"
+      data = %{key: "value"}
+
+      assert {:error, :invalid_id} = PersistentDAGEngine.add_node(node_id, data)
+
+      # Verify it wasn't written to the unintended location
+      malicious_path = Path.expand(Path.join([@test_db_path, "nodes", "#{node_id}.bin"]))
+      refute File.exists?(malicious_path)
+    end
+
     test "add_node with non-map data returns error" do
       node_id = "test_node_invalid"
       invalid_data = "not a map"
@@ -142,6 +153,28 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       assert Enum.any?(edges, fn {to, label} ->
         to == "target" && label == "connects"
       end)
+    end
+
+    test "add_edge prevents path traversal" do
+      PersistentDAGEngine.add_node("source_dir", %{})
+      PersistentDAGEngine.add_node("../../../malicious_target", %{})
+
+      # Since node ID traversal check also applies to node creation, the malicious node won't be created successfully.
+      # To properly test add_edge path traversal, let's bypass the API to create the node manually, or simply verify that add_edge rejects it.
+      # We just check the response from add_edge.
+
+      # Since we can't create the target node with a malicious ID normally, let's use a safe source and try to add an edge
+      # Note: add_edge calls node_exists? which now also uses secure_filename and will return false.
+      assert {:error, :node_not_found} = PersistentDAGEngine.add_edge("source_dir", "../../../malicious_target", "label")
+
+      # Let's bypass node_exists by injecting into cache
+      state = :sys.get_state(PersistentDAGEngine)
+      cache = state.cache
+      new_cache = %{cache | nodes: Map.put(cache.nodes, "../../../malicious_target", %{})}
+      new_cache = %{new_cache | nodes: Map.put(new_cache.nodes, "source_dir", %{})}
+      :sys.replace_state(PersistentDAGEngine, fn s -> %{s | cache: new_cache} end)
+
+      assert {:error, :invalid_id} = PersistentDAGEngine.add_edge("source_dir", "../../../malicious_target", "label")
     end
 
     test "add_edge fails if nodes don't exist" do
