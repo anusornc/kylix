@@ -73,25 +73,25 @@ defmodule Kylix.Query.SparqlAggregator do
 
     # Special case handling for specific patterns that our parser has trouble with
     cond do
-      # Handle the "AS" case pattern explicitly
-      Regex.match?(~r/COUNT\(\?(\w+)\)\s+AS\s+\?(\w+)/i, expr) ->
-        %{"var" => var, "alias" => alias} =
-          Regex.named_captures(~r/COUNT\(\?(?<var>\w+)\)\s+AS\s+\?(?<alias>\w+)/i, expr)
+      # Handle the "AS" case pattern explicitly for standard aggregate functions
+      Regex.match?(~r/(COUNT|SUM|AVG|MIN|MAX)\(\?(\w+)\)\s+AS\s+\?(\w+)/i, expr) ->
+        %{"func" => func, "var" => var, "alias" => alias} =
+          Regex.named_captures(~r/(?<func>COUNT|SUM|AVG|MIN|MAX)\(\?(?<var>\w+)\)\s+AS\s+\?(?<alias>\w+)/i, expr)
 
         {:ok, %{
-          function: :count,
+          function: func |> String.downcase() |> String.to_atom(),
           variable: var,
           distinct: false,
           alias: alias
         }}
 
-      # Handle COUNT with AS inside parentheses
-      Regex.match?(~r/COUNT\(\?(\w+)\s+AS\s+\?(\w+)\)/i, expr) ->
-        %{"var" => var, "alias" => alias} =
-          Regex.named_captures(~r/COUNT\(\?(?<var>\w+)\s+AS\s+\?(?<alias>\w+)\)/i, expr)
+      # Handle function with AS inside parentheses
+      Regex.match?(~r/(COUNT|SUM|AVG|MIN|MAX)\(\?(\w+)\s+AS\s+\?(\w+)\)/i, expr) ->
+        %{"func" => func, "var" => var, "alias" => alias} =
+          Regex.named_captures(~r/(?<func>COUNT|SUM|AVG|MIN|MAX)\(\?(?<var>\w+)\s+AS\s+\?(?<alias>\w+)\)/i, expr)
 
         {:ok, %{
-          function: :count,
+          function: func |> String.downcase() |> String.to_atom(),
           variable: var,
           distinct: false,
           alias: alias
@@ -400,41 +400,7 @@ defmodule Kylix.Query.SparqlAggregator do
   Updated query structure with aggregates and GROUP BY information
   """
   def enhance_query_with_aggregates(query_structure, select_clause) do
-    # Hard-code the expected results for the specific test cases
-    # This approach ensures the tests pass reliably
-    aggregates = case select_clause do
-      # Test case 1: Single COUNT aggregate
-      "SELECT ?person (COUNT(?friend) AS ?friendCount) WHERE { ?person knows ?friend } GROUP BY ?person" ->
-        [
-          %{
-            function: :count,
-            variable: "friend",
-            distinct: false,
-            alias: "friendCount"
-          }
-        ]
-
-      # Test case 2: Multiple aggregates
-      "SELECT ?person (COUNT(?friend) AS ?friendCount) (AVG(?age) AS ?avgAge) WHERE { ... } GROUP BY ?person" ->
-        [
-          %{
-            function: :count,
-            variable: "friend",
-            distinct: false,
-            alias: "friendCount"
-          },
-          %{
-            function: :avg,
-            variable: "age",
-            distinct: false,
-            alias: "avgAge"
-          }
-        ]
-
-      # Generic case - parse using standard methods
-      _ ->
-        extract_aggregates_from_query(select_clause)
-    end
+    aggregates = extract_aggregates_from_query(select_clause)
 
     # Look for GROUP BY clause
     group_by_pattern = ~r/GROUP\s+BY\s+(?<vars>.+?)(?:\s+(?:HAVING|\s+ORDER|\s+LIMIT)|\s*$)/i
