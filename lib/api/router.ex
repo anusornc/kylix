@@ -309,25 +309,30 @@ defmodule Kylix.API.Router do
 
         # Read all files for time series data
         all_results =
-          Enum.map(files, fn file ->
-            path = Path.join(benchmark_dir, file)
-            timestamp = extract_timestamp_from_filename(file)
+          Task.async_stream(
+            files,
+            fn file ->
+              path = Path.join(benchmark_dir, file)
+              timestamp = extract_timestamp_from_filename(file)
 
-            case File.read(path) do
-              {:ok, content} ->
-                case Jason.decode(content) do
-                  {:ok, parsed} ->
-                    Map.put(parsed, "timestamp", timestamp)
+              case File.read(path) do
+                {:ok, content} ->
+                  case Jason.decode(content) do
+                    {:ok, parsed} ->
+                      Map.put(parsed, "timestamp", timestamp)
 
-                  _ ->
-                    nil
-                end
+                    _ ->
+                      nil
+                  end
 
-              _ ->
-                nil
-            end
-          end)
-          |> Enum.filter(&(&1 != nil))
+                _ ->
+                  nil
+              end
+            end,
+            max_concurrency: System.schedulers_online()
+          )
+          |> Stream.map(fn {:ok, res} -> res end)
+          |> Enum.reject(&is_nil/1)
 
         # Return structured data
         %{
