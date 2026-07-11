@@ -57,7 +57,7 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       stored_data =
         node_path
         |> File.read!()
-        |> :erlang.binary_to_term()
+        |> :erlang.binary_to_term([:safe])
 
       assert stored_data == data
     end
@@ -125,7 +125,7 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       stored_edge =
         edge_path
         |> File.read!()
-        |> :erlang.binary_to_term()
+        |> :erlang.binary_to_term([:safe])
 
       assert stored_edge == {"source", "target", "connects"}
 
