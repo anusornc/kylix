@@ -119,19 +119,25 @@ defmodule Kylix.BlockchainServer do
 
   @impl true
   def handle_call({:add_validator, validator_id, pubkey, known_by}, _from, state) do
-    # Check if the known_by validator exists
-    case Enum.find(state.validators, fn v -> v == known_by end) do
-      nil ->
-        {:reply, {:error, :unknown_validator}, state}
+    # Check if the known_by validator exists using MapSet for O(1) lookup
+    if MapSet.member?(state.validator_set, known_by) do
+      # Add the new validator to the list (for O(N) indexing later if needed)
+      new_validators = [validator_id | state.validators]
+      # Add to the validator set for O(1) membership checks
+      new_validator_set = MapSet.put(state.validator_set, validator_id)
+      # Add the public key
+      new_public_keys = Map.put(state.public_keys, validator_id, pubkey)
+      # Update state
+      new_state = %{
+        state
+        | validators: new_validators,
+          validator_set: new_validator_set,
+          public_keys: new_public_keys
+      }
 
-      _ ->
-        # Add the new validator
-        new_validators = [validator_id | state.validators]
-        # Add the public key
-        new_public_keys = Map.put(state.public_keys, validator_id, pubkey)
-        # Update state
-        new_state = %{state | validators: new_validators, public_keys: new_public_keys}
-        {:reply, {:ok, validator_id}, new_state}
+      {:reply, {:ok, validator_id}, new_state}
+    else
+      {:reply, {:error, :unknown_validator}, state}
     end
   end
 
@@ -189,6 +195,7 @@ defmodule Kylix.BlockchainServer do
      %{
        tx_count: 0,
        validators: final_validators,
+       validator_set: MapSet.new(final_validators),
        public_keys: public_keys,
        last_block_time: DateTime.utc_now(),
        test_key_pair: test_key_pair
@@ -203,7 +210,7 @@ defmodule Kylix.BlockchainServer do
       if use_coordinator?() do
         Kylix.Consensus.ValidatorCoordinator.validator_exists?(validator_id)
       else
-        validator_id in state.validators
+        MapSet.member?(state.validator_set, validator_id)
       end
 
     # First, check if validator exists
@@ -326,7 +333,9 @@ defmodule Kylix.BlockchainServer do
                       # Get public key - check coordinator first, then local state
                       public_key =
                         if use_coordinator?() do
-                          case Kylix.Consensus.ValidatorCoordinator.get_validator_key(validator_id) do
+                          case Kylix.Consensus.ValidatorCoordinator.get_validator_key(
+                                 validator_id
+                               ) do
                             {:ok, key} -> key
                             _ -> Map.get(state.public_keys, validator_id)
                           end
@@ -441,8 +450,8 @@ defmodule Kylix.BlockchainServer do
   # Helper to check if ValidatorCoordinator is running and should be used
   defp use_coordinator?() do
     # Check if the ValidatorCoordinator module is available
+    # Check if the process is running
     Code.ensure_loaded?(Kylix.Consensus.ValidatorCoordinator) &&
-      # Check if the process is running
       !is_nil(Process.whereis(Kylix.Consensus.ValidatorCoordinator))
   end
 
