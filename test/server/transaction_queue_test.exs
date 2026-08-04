@@ -127,7 +127,6 @@ defmodule Kylix.Server.TransactionQueueTest do
   end
 
   # Fix for the failing test
-  # Fix for the failing test
   test "transaction status updates via direct message", %{queue_pid: pid} do
     # Generate a reference directly instead of submitting a transaction
     ref = make_ref()
