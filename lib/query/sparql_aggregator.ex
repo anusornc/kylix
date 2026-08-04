@@ -71,74 +71,109 @@ defmodule Kylix.Query.SparqlAggregator do
     # Log the input expression for debugging
     Logger.debug("Parsing aggregate expression: #{expr}")
 
-    # Special case handling for specific patterns that our parser has trouble with
-    cond do
-      # Handle the "AS" case pattern explicitly for standard aggregate functions
-      Regex.match?(~r/(COUNT|SUM|AVG|MIN|MAX)\(\?(\w+)\)\s+AS\s+\?(\w+)/i, expr) ->
-        %{"func" => func, "var" => var, "alias" => alias} =
-          Regex.named_captures(~r/(?<func>COUNT|SUM|AVG|MIN|MAX)\(\?(?<var>\w+)\)\s+AS\s+\?(?<alias>\w+)/i, expr)
+    expr
+    |> parse_standard_as()
+    |> parse_standard_as_inside_parens()
+    |> parse_group_concat_as()
+    |> parse_group_concat()
+    |> parse_count_distinct()
+    |> parse_regular()
+  end
 
-        {:ok, %{
-          function: func |> String.downcase() |> String.to_atom(),
-          variable: var,
-          distinct: false,
-          alias: alias
-        }}
+  defp parse_standard_as({:ok, _} = result), do: result
 
-      # Handle function with AS inside parentheses
-      Regex.match?(~r/(COUNT|SUM|AVG|MIN|MAX)\(\?(\w+)\s+AS\s+\?(\w+)\)/i, expr) ->
-        %{"func" => func, "var" => var, "alias" => alias} =
-          Regex.named_captures(~r/(?<func>COUNT|SUM|AVG|MIN|MAX)\(\?(?<var>\w+)\s+AS\s+\?(?<alias>\w+)\)/i, expr)
+  defp parse_standard_as(expr) when is_binary(expr) do
+    case Regex.named_captures(~r/(?<func>COUNT|SUM|AVG|MIN|MAX)\(\?(?<var>\w+)\)\s+AS\s+\?(?<alias>\w+)/i, expr) do
+      %{"func" => func, "var" => var, "alias" => alias} ->
+        {:ok,
+         %{
+           function: func |> String.downcase() |> String.to_atom(),
+           variable: var,
+           distinct: false,
+           alias: alias
+         }}
 
-        {:ok, %{
-          function: func |> String.downcase() |> String.to_atom(),
-          variable: var,
-          distinct: false,
-          alias: alias
-        }}
-
-      # Handle GROUP_CONCAT with separator and alias
-      Regex.match?(~r/GROUP_CONCAT\(\?(\w+)\s+SEPARATOR\s+["']([^"']*)["']\s+AS\s+\?(\w+)\)/i, expr) ->
-        %{"var" => var, "sep" => sep, "alias" => alias} =
-          Regex.named_captures(~r/GROUP_CONCAT\(\?(?<var>\w+)\s+SEPARATOR\s+["'](?<sep>[^"']*)["']\s+AS\s+\?(?<alias>\w+)\)/i, expr)
-
-        {:ok, %{
-          function: :group_concat,
-          variable: var,
-          distinct: false,
-          options: %{separator: sep},
-          alias: alias
-        }}
-
-      # Handle basic GROUP_CONCAT with separator
-      Regex.match?(~r/GROUP_CONCAT\(\?(\w+)\s+SEPARATOR\s+["']([^"']*)["']\)/i, expr) ->
-        %{"var" => var, "sep" => sep} =
-          Regex.named_captures(~r/GROUP_CONCAT\(\?(?<var>\w+)\s+SEPARATOR\s+["'](?<sep>[^"']*)["']\)/i, expr)
-
-        {:ok, %{
-          function: :group_concat,
-          variable: var,
-          distinct: false,
-          options: %{separator: sep},
-          alias: "group_concat_#{var}"
-        }}
-
-      # Handle whitespace variations explicitly
-      Regex.match?(~r/COUNT\s*\(\s*DISTINCT\s+\?(\w+)\s*\)/i, expr) ->
-        %{"var" => var} = Regex.named_captures(~r/COUNT\s*\(\s*DISTINCT\s+\?(?<var>\w+)\s*\)/i, expr)
-
-        {:ok, %{
-          function: :count,
-          variable: var,
-          distinct: true,
-          alias: "count_distinct_#{var}"
-        }}
-
-      true ->
-        # Try regular parser for other cases
-        try_regular_parser(expr)
+      nil ->
+        expr
     end
   end
+
+  defp parse_standard_as_inside_parens({:ok, _} = result), do: result
+
+  defp parse_standard_as_inside_parens(expr) when is_binary(expr) do
+    case Regex.named_captures(~r/(?<func>COUNT|SUM|AVG|MIN|MAX)\(\?(?<var>\w+)\s+AS\s+\?(?<alias>\w+)\)/i, expr) do
+      %{"func" => func, "var" => var, "alias" => alias} ->
+        {:ok,
+         %{
+           function: func |> String.downcase() |> String.to_atom(),
+           variable: var,
+           distinct: false,
+           alias: alias
+         }}
+
+      nil ->
+        expr
+    end
+  end
+
+  defp parse_group_concat_as({:ok, _} = result), do: result
+
+  defp parse_group_concat_as(expr) when is_binary(expr) do
+    case Regex.named_captures(~r/GROUP_CONCAT\(\?(?<var>\w+)\s+SEPARATOR\s+["'](?<sep>[^"']*)["']\s+AS\s+\?(?<alias>\w+)\)/i, expr) do
+      %{"var" => var, "sep" => sep, "alias" => alias} ->
+        {:ok,
+         %{
+           function: :group_concat,
+           variable: var,
+           distinct: false,
+           options: %{separator: sep},
+           alias: alias
+         }}
+
+      nil ->
+        expr
+    end
+  end
+
+  defp parse_group_concat({:ok, _} = result), do: result
+
+  defp parse_group_concat(expr) when is_binary(expr) do
+    case Regex.named_captures(~r/GROUP_CONCAT\(\?(?<var>\w+)\s+SEPARATOR\s+["'](?<sep>[^"']*)["']\)/i, expr) do
+      %{"var" => var, "sep" => sep} ->
+        {:ok,
+         %{
+           function: :group_concat,
+           variable: var,
+           distinct: false,
+           options: %{separator: sep},
+           alias: "group_concat_#{var}"
+         }}
+
+      nil ->
+        expr
+    end
+  end
+
+  defp parse_count_distinct({:ok, _} = result), do: result
+
+  defp parse_count_distinct(expr) when is_binary(expr) do
+    case Regex.named_captures(~r/COUNT\s*\(\s*DISTINCT\s+\?(?<var>\w+)\s*\)/i, expr) do
+      %{"var" => var} ->
+        {:ok,
+         %{
+           function: :count,
+           variable: var,
+           distinct: true,
+           alias: "count_distinct_#{var}"
+         }}
+
+      nil ->
+        expr
+    end
+  end
+
+  defp parse_regular({:ok, _} = result), do: result
+  defp parse_regular(expr) when is_binary(expr), do: try_regular_parser(expr)
 
   defp try_regular_parser(expr) do
     # Clean up any surrounding parentheses that might have been added by the regex extraction
