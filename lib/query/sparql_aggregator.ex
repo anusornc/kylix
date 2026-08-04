@@ -79,7 +79,7 @@ defmodule Kylix.Query.SparqlAggregator do
           Regex.named_captures(~r/(?<func>COUNT|SUM|AVG|MIN|MAX)\(\?(?<var>\w+)\)\s+AS\s+\?(?<alias>\w+)/i, expr)
 
         {:ok, %{
-          function: func |> String.downcase() |> String.to_atom(),
+          function: func |> String.downcase() |> String.to_existing_atom(),
           variable: var,
           distinct: false,
           alias: alias
@@ -91,7 +91,7 @@ defmodule Kylix.Query.SparqlAggregator do
           Regex.named_captures(~r/(?<func>COUNT|SUM|AVG|MIN|MAX)\(\?(?<var>\w+)\s+AS\s+\?(?<alias>\w+)\)/i, expr)
 
         {:ok, %{
-          function: func |> String.downcase() |> String.to_atom(),
+          function: func |> String.downcase() |> String.to_existing_atom(),
           variable: var,
           distinct: false,
           alias: alias
