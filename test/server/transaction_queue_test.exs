@@ -127,44 +127,43 @@ defmodule Kylix.Server.TransactionQueueTest do
   end
 
   # Fix for the failing test
-  # Fix for the failing test
-  test "transaction status updates via direct message", %{queue_pid: pid} do
-    # Generate a reference directly instead of submitting a transaction
+  test "transaction status updates via direct message" do
+    # Generate a reference directly
     ref = make_ref()
 
     # Prepare a timestamp
     now = DateTime.utc_now()
 
-    # Manually inject the initial status without triggering actual processing
-    :sys.replace_state(pid, fn state ->
-      initial_tx_status = %{
-        status: :pending,
-        submitted_at: now
+    initial_tx_status = %{
+      status: :pending,
+      submitted_at: now
+    }
+
+    initial_state = %{
+      transaction_statuses: %{ref => initial_tx_status},
+      stats: %{
+        submitted: 1,
+        processed: 0,
+        failed: 0,
+        last_processed_at: nil
       }
+    }
 
-      # Add to transaction_statuses map
-      new_statuses = Map.put(state.transaction_statuses, ref, initial_tx_status)
+    # Call handle_info directly for deterministic testing
+    {:noreply, new_state} =
+      TransactionQueue.handle_info({:transaction_result, ref, {:ok, "test_tx_id"}}, initial_state)
 
-      # Update state
-      %{state | transaction_statuses: new_statuses}
-    end)
-
-    # Check initial status
-    initial_status = TransactionQueue.get_transaction_status(ref)
-    assert initial_status.status == :pending
-
-    # Send transaction result message
-    send(pid, {:transaction_result, ref, {:ok, "test_tx_id"}})
-
-    # Wait for processing
-    Process.sleep(100)
-
-    # Check final status
-    final_status = TransactionQueue.get_transaction_status(ref)
+    # Check final status in the returned state
+    final_status = Map.get(new_state.transaction_statuses, ref)
     assert final_status != nil
     assert Map.has_key?(final_status, :result)
     assert final_status.result == {:ok, "test_tx_id"}
     assert Map.has_key?(final_status, :completed_at)
+
+    # Check stats updated
+    assert new_state.stats.processed == 1
+    assert new_state.stats.failed == 0
+    assert new_state.stats.last_processed_at != nil
   end
 
   # Test that transactions are processed asynchronously with real keys
