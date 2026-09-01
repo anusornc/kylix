@@ -300,4 +300,79 @@ defmodule Kylix.Storage.PersistentDAGEngineTest do
       assert length(results) == 3
     end
   end
+  describe "GenServer callbacks" do
+    setup do
+      state = %{
+        db_path: "test_db",
+        metadata: %{},
+        cache: %{
+          nodes: %{
+            "node1" => %{subject: "S", predicate: "P", object: "O"}
+          },
+          edges: %{
+            "node1" => [{"node2", "label"}]
+          }
+        },
+        query_cache: %{}
+      }
+      {:ok, state: state}
+    end
+
+    test "handle_call({:query, pattern}) computes result on cache miss and stores in query_cache", %{state: state} do
+      pattern = {"S", "P", "O"}
+      cache_key = :erlang.term_to_binary(pattern)
+
+      assert {:reply, {:ok, results}, new_state} = PersistentDAGEngine.handle_call({:query, pattern}, {self(), make_ref()}, state)
+
+      # Ensure it computed correct result
+      assert length(results) == 1
+      assert [{"node1", %{subject: "S", predicate: "P", object: "O"}, [{"node2", "label"}]}] = results
+
+      # Ensure it stored result in cache
+      assert Map.has_key?(new_state.query_cache, cache_key)
+      {cached_result, timestamp} = new_state.query_cache[cache_key]
+      assert cached_result == {:ok, results}
+      assert is_integer(timestamp)
+    end
+
+    test "handle_call({:query, pattern}) returns cached result on cache hit", %{state: state} do
+      pattern = {"S", "P", "O"}
+      cache_key = :erlang.term_to_binary(pattern)
+      cached_val = {:ok, [{"cached_node", %{}, []}]}
+      now = System.system_time(:second)
+
+      # Pre-populate cache
+      state = %{state | query_cache: %{cache_key => {cached_val, now}}}
+
+      assert {:reply, reply, new_state} = PersistentDAGEngine.handle_call({:query, pattern}, {self(), make_ref()}, state)
+
+      # Should return exactly the cached result
+      assert reply == cached_val
+
+      # Cache should remain unchanged
+      assert new_state.query_cache == state.query_cache
+    end
+
+    test "handle_call({:query, pattern}) recomputes and updates cache on cache expiration", %{state: state} do
+      pattern = {"S", "P", "O"}
+      cache_key = :erlang.term_to_binary(pattern)
+      cached_val = {:ok, [{"stale_node", %{}, []}]}
+      expired_time = System.system_time(:second) - 400 # @cache_ttl is 300
+
+      # Pre-populate cache with expired entry
+      state = %{state | query_cache: %{cache_key => {cached_val, expired_time}}}
+
+      assert {:reply, {:ok, results}, new_state} = PersistentDAGEngine.handle_call({:query, pattern}, {self(), make_ref()}, state)
+
+      # Ensure it computed correct fresh result (not the stale one)
+      assert length(results) == 1
+      assert [{"node1", %{subject: "S", predicate: "P", object: "O"}, [{"node2", "label"}]}] = results
+
+      # Ensure it updated the cache timestamp
+      {updated_result, new_timestamp} = new_state.query_cache[cache_key]
+      assert updated_result == {:ok, results}
+      assert new_timestamp > expired_time
+      assert new_timestamp <= System.system_time(:second)
+    end
+  end
 end
