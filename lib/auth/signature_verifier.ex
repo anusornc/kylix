@@ -49,11 +49,12 @@ defmodule Kylix.Auth.SignatureVerifier do
     config_dir
     |> File.ls!()
     |> Enum.filter(&String.ends_with?(&1, ".pub"))
-    |> Enum.map(fn file ->
+    |> Task.async_stream(fn file ->
       validator_id = Path.rootname(file)
       key_data = File.read!(Path.join(config_dir, file))
       {validator_id, key_data}
     end)
+    |> Enum.map(fn {:ok, result} -> result end)
     |> Enum.into(%{})
   end
 
