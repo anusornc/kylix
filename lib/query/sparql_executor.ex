@@ -171,13 +171,11 @@ defmodule Kylix.Query.SparqlExecutor do
         results =
           Enum.reduce(patterns, [%{}], fn pattern, current_solutions ->
             try do
-              # Check for `is_map(pattern)` is already here from a previous fix
               if !is_map(pattern) do
                 Logger.warning("SparqlExecutor: (reduce) non-map pattern: #{inspect(pattern)}. Skipping.")
                 current_solutions 
               else
                 Enum.flat_map(current_solutions, fn solution ->
-                  # Check for `is_map(solution)` is already here from a previous fix
                   if !is_map(solution) do
                     Logger.warning("SparqlExecutor: (flat_map) non-map solution: #{inspect(solution)}. Skipping path.")
                     [] 
