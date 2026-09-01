@@ -269,84 +269,63 @@ defmodule Kylix.API.Router do
 
   # Load transaction benchmark data from JSON files
   defp load_benchmark_data do
-    # Path to benchmark directory
     benchmark_dir = "data/benchmark"
 
-    # Check if directory exists
-    if File.exists?(benchmark_dir) && File.dir?(benchmark_dir) do
-      # List all JSON files in the directory
-      files =
-        File.ls!(benchmark_dir)
-        |> Enum.filter(&String.ends_with?(&1, ".json"))
-        |> Enum.sort()
-        # Get newest first
-        |> Enum.reverse()
-        # Take only the 5 most recent
-        |> Enum.take(5)
+    case fetch_benchmark_files(benchmark_dir) do
+      [] ->
+        %{results: [], latest: nil}
 
-      # Return empty if no files
-      if files == [] do
-        %{
-          results: [],
-          latest: nil
-        }
-      else
-        # Read and parse the most recent file
+      files ->
         latest_file = hd(files)
         latest_path = Path.join(benchmark_dir, latest_file)
+        latest_data = read_and_decode_json(latest_path) || %{}
 
-        latest_data =
-          case File.read(latest_path) do
-            {:ok, content} ->
-              case Jason.decode(content) do
-                {:ok, parsed} -> parsed
-                _ -> %{}
-              end
+        all_results = load_time_series_data(benchmark_dir, files)
 
-            _ ->
-              %{}
-          end
-
-        # Read all files for time series data
-        all_results =
-          Task.async_stream(
-            files,
-            fn file ->
-              path = Path.join(benchmark_dir, file)
-              timestamp = extract_timestamp_from_filename(file)
-
-              case File.read(path) do
-                {:ok, content} ->
-                  case Jason.decode(content) do
-                    {:ok, parsed} ->
-                      Map.put(parsed, "timestamp", timestamp)
-
-                    _ ->
-                      nil
-                  end
-
-                _ ->
-                  nil
-              end
-            end,
-            max_concurrency: System.schedulers_online()
-          )
-          |> Stream.map(fn {:ok, res} -> res end)
-          |> Enum.reject(&is_nil/1)
-
-        # Return structured data
         %{
           results: all_results,
           latest: latest_data
         }
-      end
-    else
-      # Directory doesn't exist
-      %{
-        results: [],
-        latest: nil
-      }
     end
+  end
+
+  defp fetch_benchmark_files(dir) do
+    if File.exists?(dir) && File.dir?(dir) do
+      File.ls!(dir)
+      |> Enum.filter(&String.ends_with?(&1, ".json"))
+      |> Enum.sort()
+      |> Enum.reverse()
+      |> Enum.take(5)
+    else
+      []
+    end
+  end
+
+  defp read_and_decode_json(path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, parsed} <- Jason.decode(content) do
+      parsed
+    else
+      _ -> nil
+    end
+  end
+
+  defp load_time_series_data(dir, files) do
+    Task.async_stream(
+      files,
+      fn file ->
+        path = Path.join(dir, file)
+        timestamp = extract_timestamp_from_filename(file)
+
+        case read_and_decode_json(path) do
+          nil -> nil
+          parsed -> Map.put(parsed, "timestamp", timestamp)
+        end
+      end,
+      max_concurrency: System.schedulers_online()
+    )
+    |> Stream.map(fn {:ok, res} -> res end)
+    |> Enum.reject(&is_nil/1)
   end
 
   # Extract timestamp from filename like "benchmark_2023-05-25_12-30-45.json"
