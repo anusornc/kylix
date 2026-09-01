@@ -184,8 +184,7 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     submission_total_time = submission_end_time - start_time
 
     # Extract submission times and references
-    submission_times = Enum.map(transaction_refs, fn {_ref, time} -> time end)
-    refs = Enum.map(transaction_refs, fn {ref, _time} -> ref end)
+    {refs, submission_times} = Enum.unzip(transaction_refs)
 
     # Wait for processing to complete
     IO.puts("Waiting for transactions to be processed...")
