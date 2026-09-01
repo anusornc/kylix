@@ -31,9 +31,7 @@ defmodule Kylix.Consensus do
     # Get status from blockchain server for transaction count
     if Process.whereis(Kylix.BlockchainServer) do
       try do
-        # The transaction count would be equivalent to the round number
-        # We'll need to add an API to get this from the BlockchainServer
-        0  # Placeholder until proper API exists
+        Kylix.BlockchainServer.get_tx_count()
       rescue
         _ -> 0
       end
