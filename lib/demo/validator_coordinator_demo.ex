@@ -34,8 +34,10 @@ defmodule Kylix.Demo.ValidatorCoordinatorDemo do
       case ValidatorCoordinator.start_link(validators: initial_validators, config_dir: tmp_dir) do
         {:ok, _pid} ->
           IO.puts("\nStarted new ValidatorCoordinator instance")
+
         {:error, {:already_started, _pid}} ->
           IO.puts("\nValidatorCoordinator was started by another process")
+
         error ->
           IO.puts("\nError starting ValidatorCoordinator: #{inspect(error)}")
       end
@@ -95,7 +97,9 @@ defmodule Kylix.Demo.ValidatorCoordinatorDemo do
       ValidatorCoordinator.record_transaction_performance(validator, success?, tx_time)
 
       # Print transaction details
-      IO.puts("Transaction #{i}: Validator #{validator}, Time: #{tx_time}μs, Success: #{success?}")
+      IO.puts(
+        "Transaction #{i}: Validator #{validator}, Time: #{tx_time}μs, Success: #{success?}"
+      )
     end)
   end
 
@@ -114,29 +118,20 @@ defmodule Kylix.Demo.ValidatorCoordinatorDemo do
     metrics = ValidatorCoordinator.get_performance_metrics()
 
     IO.puts("\nPerformance Metrics:")
+
     Enum.each(metrics, fn {validator, stats} ->
       IO.puts("#{validator}:")
       IO.puts("  Total: #{stats.total_transactions}")
       IO.puts("  Success: #{stats.successful_transactions}")
       IO.puts("  Failure Rate: #{stats.failure_rate * 100}%")
-      IO.puts("  Avg Tx Time: #{if stats.avg_tx_time, do: "#{Float.round(stats.avg_tx_time, 2)}μs", else: "N/A"}")
+
+      IO.puts(
+        "  Avg Tx Time: #{if stats.avg_tx_time, do: "#{Float.round(stats.avg_tx_time, 2)}μs", else: "N/A"}"
+      )
+
       IO.puts("  Last Active: #{DateTime.to_string(stats.last_active)}")
     end)
   end
-
-  # defp generate_test_keys(validators, dir) do
-  #   Enum.map(validators, fn validator ->
-  #     # Generate key pair
-  #     {:ok, pub_key, priv_key} = generate_key_pair()
-
-  #     # Save public key
-  #     pub_path = Path.join(dir, "#{validator}.pub")
-  #     File.write!(pub_path, pub_key)
-
-  #     # Return info
-  #     {validator, pub_key, priv_key}
-  #   end)
-  # end
 
   defp generate_key_pair do
     # Use the SignatureVerifier to generate a key pair
