@@ -59,112 +59,129 @@ defmodule Kylix.Benchmark.ResultVisualizer do
   def generate_visualization_html(data) do
     # Generate HTML with Chart.js for visualizing the data
     # This would be a simplified version of the original HTML
-"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kylix Benchmark Results</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        h1 {
-            color: #333;
-            text-align: center;
-        }
-        .chart-container {
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            padding: 20px;
-            margin-bottom: 30px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Kylix Benchmark Results</h1>
-        <div class="chart-container">
-            <canvas id="tpsChart"></canvas>
-        </div>
-        <div class="chart-container">
-            <canvas id="latencyChart"></canvas>
-        </div>
-    </div>
+    """
+    #{html_head()}
+    #{html_body()}
+    #{html_script(data)}
+    </html>
+    """
+  end
 
-    <script>
-        // JavaScript code to render charts using the data
-        const data = #{Jason.encode!(data)};
-
-        // Create TPS chart
-        const tpsCtx = document.getElementById('tpsChart').getContext('2d');
-        new Chart(tpsCtx, {
-            type: 'bar',
-            data: {
-                labels: ['Transactions Per Second'],
-                datasets: [{
-                    label: 'TPS',
-                    data: [data.transactions_per_second],
-                    backgroundColor: 'rgba(54, 162, 235, 0.7)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                scales: {
-                    y: {
-                        beginAtZero: true
-                    }
-                }
+  defp html_head() do
+    """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Kylix Benchmark Results</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background-color: #f5f5f5;
             }
-        });
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+            h1 {
+                color: #333;
+                text-align: center;
+            }
+            .chart-container {
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                padding: 20px;
+                margin-bottom: 30px;
+            }
+        </style>
+    </head>
+    """
+  end
 
-        // Create latency chart
-        const latencyCtx = document.getElementById('latencyChart').getContext('2d');
-        new Chart(latencyCtx, {
-            type: 'line',
-            data: {
-                labels: Array.from({length: data.transaction_times.length}, (_, i) => i + 1),
-                datasets: [{
-                    label: 'Transaction Time (μs)',
-                    data: data.transaction_times,
-                    borderColor: 'rgba(255, 99, 132, 1)',
-                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                    borderWidth: 2,
-                    fill: true
-                }]
-            },
-            options: {
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Time (μs)'
-                        }
-                    },
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Transaction #'
+  defp html_body() do
+    """
+    <body>
+        <div class="container">
+            <h1>Kylix Benchmark Results</h1>
+            <div class="chart-container">
+                <canvas id="tpsChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="latencyChart"></canvas>
+            </div>
+        </div>
+    """
+  end
+
+  defp html_script(data) do
+    """
+        <script>
+            // JavaScript code to render charts using the data
+            const data = #{Jason.encode!(data)};
+
+            // Create TPS chart
+            const tpsCtx = document.getElementById('tpsChart').getContext('2d');
+            new Chart(tpsCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Transactions Per Second'],
+                    datasets: [{
+                        label: 'TPS',
+                        data: [data.transactions_per_second],
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
                         }
                     }
                 }
-            }
-        });
-    </script>
-</body>
-</html>
-"""
+            });
+
+            // Create latency chart
+            const latencyCtx = document.getElementById('latencyChart').getContext('2d');
+            new Chart(latencyCtx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: data.transaction_times.length}, (_, i) => i + 1),
+                    datasets: [{
+                        label: 'Transaction Time (μs)',
+                        data: data.transaction_times,
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                        borderWidth: 2,
+                        fill: true
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Time (μs)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Transaction #'
+                            }
+                        }
+                    }
+                }
+            });
+        </script>
+    </body>
+    """
   end
 end
