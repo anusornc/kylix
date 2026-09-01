@@ -398,23 +398,27 @@ defmodule Kylix.Storage.Coordinator do
     object = Map.get(data, :object)
 
     # Find cache entries that could be affected by this change
-    all_patterns =
-      :ets.tab2list(:coordinator_cache_access_times)
-      |> Enum.map(fn {_, pattern} -> pattern end)
+    # Invalidate if any of these match:
+    # 1. Query is for this subject
+    # 2. Query is for this predicate
+    # 3. Query is for this object
+    # 4. Query is a wildcard for any of these fields
+    match_spec = [
+      {{:_, :"$1"},
+       [
+         {:orelse,
+          {:orelse,
+           {:orelse,
+            {:orelse,
+             {:orelse, {:==, {:element, 1, :"$1"}, subject}, {:==, {:element, 1, :"$1"}, nil}},
+             {:==, {:element, 2, :"$1"}, predicate}},
+            {:==, {:element, 2, :"$1"}, nil}},
+           {:==, {:element, 3, :"$1"}, object}},
+          {:==, {:element, 3, :"$1"}, nil}}
+       ], [:"$1"]}
+    ]
 
-    affected_patterns =
-      Enum.filter(all_patterns, fn pattern ->
-        # Invalidate if any of these match:
-        # 1. Query is for this subject
-        # 2. Query is for this predicate
-        # 3. Query is for this object
-        # 4. Query is a wildcard for any of these fields
-        {pattern_s, pattern_p, pattern_o} = pattern
-
-        pattern_s == subject || pattern_s == nil ||
-          (pattern_p == predicate || pattern_p == nil) ||
-          (pattern_o == object || pattern_o == nil)
-      end)
+    affected_patterns = :ets.select(:coordinator_cache_access_times, match_spec)
 
     # Invalidate affected patterns
     invalidate_patterns(affected_patterns)
@@ -425,16 +429,19 @@ defmodule Kylix.Storage.Coordinator do
   # Invalidate cache entries related to an edge
   defp invalidate_edge_related_cache(from_id, to_id) do
     # Find cache entries that could be affected by this edge
-    all_patterns =
-      :ets.tab2list(:coordinator_cache_access_times)
-      |> Enum.map(fn {_, pattern} -> pattern end)
-
     # For edges, we mainly care about patterns that involve either node
-    affected_patterns =
-      Enum.filter(all_patterns, fn pattern ->
-        {pattern_s, _pattern_p, _pattern_o} = pattern
-        pattern_s == from_id || pattern_s == to_id || pattern_s == nil
-      end)
+    match_spec = [
+      {{:_, :"$1"},
+       [
+         {:orelse,
+          {:orelse,
+           {:==, {:element, 1, :"$1"}, from_id},
+           {:==, {:element, 1, :"$1"}, to_id}},
+          {:==, {:element, 1, :"$1"}, nil}}
+       ], [:"$1"]}
+    ]
+
+    affected_patterns = :ets.select(:coordinator_cache_access_times, match_spec)
 
     # Invalidate affected patterns
     invalidate_patterns(affected_patterns)
