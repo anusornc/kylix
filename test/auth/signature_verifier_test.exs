@@ -91,6 +91,37 @@ defmodule Kylix.Auth.SignatureVerifierTest do
     end
   end
 
+  describe "generate_test_key_pair/0" do
+    test "generates a valid RSA key pair" do
+      # Act
+      result = SignatureVerifier.generate_test_key_pair()
+
+      # Assert
+      assert {:ok, {public_key, private_key}} = result
+      assert is_list(public_key) or is_binary(public_key) or is_tuple(public_key)
+      assert is_list(private_key) or is_binary(private_key) or is_tuple(private_key)
+    end
+  end
+
+  describe "sign/2" do
+    test "creates a signature using the private key" do
+      # Arrange
+      {:ok, {public_key, private_key}} = SignatureVerifier.generate_test_key_pair()
+      data = "test transaction data"
+
+      # Act
+      signature = SignatureVerifier.sign(data, private_key)
+
+      # Assert
+      assert is_binary(signature)
+
+      # Verify the signature can be verified with the public key natively
+      # to ensure it's a mathematically valid RSA signature
+      data_hash = :crypto.hash(:sha256, data)
+      assert :crypto.verify(:rsa, :sha256, data_hash, signature, public_key)
+    end
+  end
+
   describe "load_public_keys/1" do
     test "loads public keys from directory" do
       # Arrange - test keys are created in setup
