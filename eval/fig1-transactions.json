@@ -1,0 +1,17 @@
+[
+  {"s": "entity:cleaned-data", "p": "prov:wasGeneratedBy", "o": "activity:clean"},
+  {"s": "activity:clean", "p": "prov:used", "o": "entity:raw-measurements"},
+  {"s": "entity:cleaned-data", "p": "prov:wasDerivedFrom", "o": "entity:raw-measurements"},
+  {"s": "entity:model", "p": "prov:wasGeneratedBy", "o": "activity:analyze"},
+  {"s": "activity:analyze", "p": "prov:used", "o": "entity:cleaned-data"},
+  {"s": "entity:model", "p": "prov:wasDerivedFrom", "o": "entity:cleaned-data"},
+  {"s": "entity:fig1", "p": "prov:wasGeneratedBy", "o": "activity:plot"},
+  {"s": "activity:plot", "p": "prov:used", "o": "entity:model"},
+  {"s": "entity:fig1", "p": "prov:wasDerivedFrom", "o": "entity:model"},
+  {"s": "entity:cleaned-data", "p": "prov:wasAttributedTo", "o": "agent:alice"},
+  {"s": "entity:model", "p": "prov:wasAttributedTo", "o": "agent:alice"},
+  {"s": "entity:fig1", "p": "prov:wasAttributedTo", "o": "agent:alice"},
+  {"s": "activity:clean", "p": "prov:wasAssociatedWith", "o": "agent:alice"},
+  {"s": "activity:analyze", "p": "prov:wasAssociatedWith", "o": "agent:alice"},
+  {"s": "activity:plot", "p": "prov:wasAssociatedWith", "o": "agent:alice"}
+]

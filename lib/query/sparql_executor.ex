@@ -282,15 +282,15 @@ defmodule Kylix.Query.SparqlExecutor do
     # binding is a map like %{"?s_var" => "actual_value_for_s"}
 
     resolve_value = fn key_str ->
-      pattern_component = Map.get(pattern, key_str) # Use string key "s", "p", or "o"
+      pattern_component =
+        Map.get(pattern, key_str) || Map.get(pattern, String.to_existing_atom(key_str))
 
       cond do
         is_binary(pattern_component) and String.starts_with?(pattern_component, "?") ->
-          # It's a variable like "?s_var", look it up in the binding.
-          # If not found in binding (e.g., first pattern), Map.get returns nil, which is correct.
-          Map.get(binding, pattern_component)
+          Map.get(binding, pattern_component) ||
+            Map.get(binding, String.trim_leading(pattern_component, "?"))
+
         true ->
-          # It's a literal URI/value, or nil (for wildcard). Use as is.
           pattern_component
       end
     end
@@ -315,10 +315,13 @@ defmodule Kylix.Query.SparqlExecutor do
       end
     end
 
-    # Assumes pattern keys are strings "s", "p", "o"
-    s_var_name_in_pattern = get_var_name.(Map.get(pattern, "s"))
-    p_var_name_in_pattern = get_var_name.(Map.get(pattern, "p"))
-    o_var_name_in_pattern = get_var_name.(Map.get(pattern, "o"))
+    pattern_part = fn key ->
+      Map.get(pattern, key) || Map.get(pattern, String.to_existing_atom(key))
+    end
+
+    s_var_name_in_pattern = get_var_name.(pattern_part.("s"))
+    p_var_name_in_pattern = get_var_name.(pattern_part.("p"))
+    o_var_name_in_pattern = get_var_name.(pattern_part.("o"))
 
     # Start with the current solution
     Enum.reduce_while(new_triple_bindings, current_solution, fn {key_from_triple, value_from_triple}, acc ->
@@ -330,11 +333,12 @@ defmodule Kylix.Query.SparqlExecutor do
             key_from_triple == "s" && s_var_name_in_pattern -> s_var_name_in_pattern
             key_from_triple == "p" && p_var_name_in_pattern -> p_var_name_in_pattern
             key_from_triple == "o" && o_var_name_in_pattern -> o_var_name_in_pattern
-            # Other keys (e.g., from VariableMapper like "entity") are treated as direct variable names
-            # if they don't overwrite an existing s,p,o variable from the pattern.
-            !Enum.member?(["s", "p", "o"], key_from_triple) -> key_from_triple
-            # If key_from_triple is "s", "p", "o" but the corresponding pattern part was a literal (no var_name),
-            # then this component was for matching only, not for binding under "s", "p", "o".
+            # PROV-O role keys from VariableMapper (entity, activity, agent, ...) join
+            # BGP solutions. Position aliases and storage metadata must not: a
+            # generated-by triple's "subject" is an entity and the associated-with
+            # triple's "subject" is an activity, so treating those as join variables
+            # discards the solution.
+            join_variable_key?(key_from_triple) -> key_from_triple
             true -> nil 
           end
 
@@ -363,6 +367,28 @@ defmodule Kylix.Query.SparqlExecutor do
       end
     end)
   end
+
+  # VariableMapper copies RDF positions under several aliases. Those are not SPARQL
+  # join variables. Role names (entity, activity, agent, derivedEntity, ...) are.
+  defp join_variable_key?(key) when key in ["s", "p", "o"], do: false
+
+  defp join_variable_key?(key)
+       when key in [
+              "subject",
+              "predicate",
+              "object",
+              "person",
+              "relation",
+              "target",
+              "friend",
+              "node_id",
+              "edges",
+              "validator",
+              "timestamp"
+            ],
+       do: false
+
+  defp join_variable_key?(_key), do: true
 
   defp add_union_results(base_results, unions) do
     try do
