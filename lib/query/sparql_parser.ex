@@ -461,7 +461,7 @@ defmodule Kylix.Query.SparqlParser do
     end)
   end
 
-  defp process_node({:variable, _var}), do: nil
+  defp process_node({:variable, var}), do: "?#{var}"
 
   defp process_node({:literal_with_meta, [{:literal, value} | rest]}) do
     case rest do

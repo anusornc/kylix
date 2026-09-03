@@ -309,9 +309,9 @@ defmodule Kylix.Query.SparqlExecutor do
     # Helper to get the variable name string if pattern_value is a variable string, else nil
     get_var_name = fn pattern_value ->
       if is_binary(pattern_value) and String.starts_with?(pattern_value, "?") do
-        pattern_value # The variable name itself, e.g., "?s"
+        String.trim_leading(pattern_value, "?")
       else
-        nil # It's a literal or nil
+        nil
       end
     end
 
@@ -323,6 +323,14 @@ defmodule Kylix.Query.SparqlExecutor do
     p_var_name_in_pattern = get_var_name.(pattern_part.("p"))
     o_var_name_in_pattern = get_var_name.(pattern_part.("o"))
 
+    pattern_vars =
+      MapSet.new(
+        Enum.reject(
+          [s_var_name_in_pattern, p_var_name_in_pattern, o_var_name_in_pattern],
+          &is_nil/1
+        )
+      )
+
     # Start with the current solution
     Enum.reduce_while(new_triple_bindings, current_solution, fn {key_from_triple, value_from_triple}, acc ->
       if is_nil(acc) do # Propagate nil if a conflict already occurred and halted the accumulator
@@ -333,13 +341,11 @@ defmodule Kylix.Query.SparqlExecutor do
             key_from_triple == "s" && s_var_name_in_pattern -> s_var_name_in_pattern
             key_from_triple == "p" && p_var_name_in_pattern -> p_var_name_in_pattern
             key_from_triple == "o" && o_var_name_in_pattern -> o_var_name_in_pattern
-            # PROV-O role keys from VariableMapper (entity, activity, agent, ...) join
-            # BGP solutions. Position aliases and storage metadata must not: a
-            # generated-by triple's "subject" is an entity and the associated-with
-            # triple's "subject" is an activity, so treating those as join variables
-            # discards the solution.
+            # PROV-O role labels from VariableMapper fill SELECT vars when a
+            # pattern position is a literal. They are not BGP join variables:
+            # a derived-from chain reuses derivedEntity/sourceEntity on every hop.
             join_variable_key?(key_from_triple) -> key_from_triple
-            true -> nil 
+            true -> nil
           end
 
         if target_var_name_for_binding do
@@ -350,9 +356,12 @@ defmodule Kylix.Query.SparqlExecutor do
             if existing_val == value_from_triple or is_nil(existing_val) do
               {:cont, Map.put(acc, target_var_name_for_binding, value_from_triple)}
             else
-              # Conflict: variable already bound to a different value
-              Logger.debug("SparqlExecutor: merge_bindings conflict for variable '#{target_var_name_for_binding}'. Existing: '#{inspect(existing_val)}', New: '#{inspect(value_from_triple)}'. Discarding solution branch.")
-              {:halt, nil} 
+              if MapSet.member?(pattern_vars, target_var_name_for_binding) do
+                Logger.debug("SparqlExecutor: merge_bindings conflict for variable '#{target_var_name_for_binding}'. Existing: '#{inspect(existing_val)}', New: '#{inspect(value_from_triple)}'. Discarding solution branch.")
+                {:halt, nil}
+              else
+                {:cont, acc}
+              end
             end
           else
             # New variable binding for this solution

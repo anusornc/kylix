@@ -12,9 +12,9 @@ defmodule Kylix.Query.SparqlParserTest do
       assert length(parsed.patterns) == 1
 
       pattern = hd(parsed.patterns)
-      assert pattern.s == nil
-      assert pattern.p == nil
-      assert pattern.o == nil
+      assert pattern.s == "?s"
+      assert pattern.p == "?p"
+      assert pattern.o == "?o"
     end
 
     test "parses query with explicit values" do
@@ -23,8 +23,8 @@ defmodule Kylix.Query.SparqlParserTest do
       {:ok, parsed} = SparqlParser.parse(query)
       pattern = hd(parsed.patterns)
       assert pattern.s == "Alice"
-      assert pattern.p == nil
-      assert pattern.o == nil
+      assert pattern.p == "?p"
+      assert pattern.o == "?o"
     end
 
     test "parses query with multiple patterns" do
