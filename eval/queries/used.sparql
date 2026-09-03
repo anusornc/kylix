@@ -1,0 +1,2 @@
+SELECT ?used
+WHERE { "activity:plot" prov:used ?used . }

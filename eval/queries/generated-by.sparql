@@ -1,0 +1,2 @@
+SELECT ?activity
+WHERE { "entity:fig1" prov:wasGeneratedBy ?activity . }

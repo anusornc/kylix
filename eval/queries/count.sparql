@@ -1,0 +1,2 @@
+SELECT (COUNT(?entity) AS ?n)
+WHERE { ?entity prov:wasAttributedTo "agent:alice" . }

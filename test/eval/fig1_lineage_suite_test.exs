@@ -17,73 +17,34 @@ defmodule Kylix.Eval.Fig1LineageSuiteTest do
   end
 
   test "plot used the model" do
-    query = """
-    SELECT ?used
-    WHERE { "activity:plot" prov:used ?used . }
-    """
-
-    assert {:ok, results} = SparqlEngine.execute(query)
-    assert [%{"used" => "entity:model"}] = results
+    assert_lineage("used")
   end
 
   test "fig1 was derived from the model in one hop" do
-    query = """
-    SELECT ?source
-    WHERE { "entity:fig1" prov:wasDerivedFrom ?source . }
-    """
-
-    assert {:ok, results} = SparqlEngine.execute(query)
-    assert [%{"source" => "entity:model"}] = results
+    assert_lineage("derived-from")
   end
 
   test "fig1 derivation chain binds model, cleaned-data, and raw-measurements" do
-    query = """
-    SELECT ?e1 ?e2 ?raw
-    WHERE {
-      "entity:fig1" prov:wasDerivedFrom ?e1 .
-      ?e1 prov:wasDerivedFrom ?e2 .
-      ?e2 prov:wasDerivedFrom ?raw .
-    }
-    """
-
-    assert {:ok, results} = SparqlEngine.execute(query)
-
-    assert [
-             %{
-               "e1" => "entity:model",
-               "e2" => "entity:cleaned-data",
-               "raw" => "entity:raw-measurements"
-             }
-           ] = results
+    assert_lineage("derived-from-chain")
   end
 
   test "fig1 is attributed to alice" do
-    query = """
-    SELECT ?agent
-    WHERE { "entity:fig1" prov:wasAttributedTo ?agent . }
-    """
-
-    assert {:ok, results} = SparqlEngine.execute(query)
-    assert [%{"agent" => "agent:alice"}] = results
+    assert_lineage("attributed-to")
   end
 
   test "plot generated fig1" do
-    query = """
-    SELECT ?entity
-    WHERE { ?entity prov:wasGeneratedBy "activity:plot" . }
-    """
-
-    assert {:ok, results} = SparqlEngine.execute(query)
-    assert [%{"entity" => "entity:fig1"}] = results
+    assert_lineage("activity-outputs")
   end
 
   test "count of entities attributed to alice is 3" do
-    query = """
-    SELECT (COUNT(?entity) AS ?n)
-    WHERE { ?entity prov:wasAttributedTo "agent:alice" . }
-    """
+    assert_lineage("count")
+  end
+
+  defp assert_lineage(name) do
+    query = Kylix.Eval.Suite.query(name)
+    expected = Kylix.Eval.Suite.expected(name)
 
     assert {:ok, results} = SparqlEngine.execute(query)
-    assert [%{"n" => 3}] = results
+    assert results == expected
   end
 end

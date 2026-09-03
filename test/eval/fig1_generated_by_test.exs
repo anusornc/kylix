@@ -20,12 +20,10 @@ defmodule Kylix.Eval.Fig1GeneratedByTest do
   } do
     assert {:ok, 15} = Kylix.Eval.Fig1.record(validator_id: "agent1", private_key: private_key)
 
-    query = """
-    SELECT ?activity
-    WHERE { "entity:fig1" prov:wasGeneratedBy ?activity . }
-    """
+    query = Kylix.Eval.Suite.query("generated-by")
+    expected = Kylix.Eval.Suite.expected("generated-by")
 
     assert {:ok, results} = SparqlEngine.execute(query)
-    assert [%{"activity" => "activity:plot"}] = results
+    assert results == expected
   end
 end

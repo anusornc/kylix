@@ -1,0 +1,2 @@
+SELECT ?entity
+WHERE { ?entity prov:wasGeneratedBy "activity:plot" . }

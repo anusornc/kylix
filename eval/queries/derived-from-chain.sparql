@@ -1,0 +1,6 @@
+SELECT ?e1 ?e2 ?raw
+WHERE {
+  "entity:fig1" prov:wasDerivedFrom ?e1 .
+  ?e1 prov:wasDerivedFrom ?e2 .
+  ?e2 prov:wasDerivedFrom ?raw .
+}

@@ -1,0 +1,2 @@
+SELECT ?agent
+WHERE { "entity:fig1" prov:wasAttributedTo ?agent . }

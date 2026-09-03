@@ -1,0 +1,2 @@
+SELECT ?source
+WHERE { "entity:fig1" prov:wasDerivedFrom ?source . }
