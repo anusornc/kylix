@@ -75,12 +75,7 @@ defmodule Kylix.BlockchainServer do
   # Returns a list of validator identifiers
   @spec get_validators() :: [String.t()]
   def get_validators() do
-    # Forward to ValidatorCoordinator if it's running, otherwise use local state
-    if use_coordinator?() do
-      Kylix.Consensus.ValidatorCoordinator.get_validators()
-    else
-      GenServer.call(__MODULE__, :get_validators)
-    end
+    GenServer.call(__MODULE__, :get_validators)
   end
 
   # Add a new validator to the blockchain
@@ -91,12 +86,7 @@ defmodule Kylix.BlockchainServer do
   @spec add_validator(String.t(), String.t(), String.t()) ::
           {:ok, String.t()} | {:error, atom()}
   def add_validator(validator_id, pubkey, known_by) do
-    # Forward to ValidatorCoordinator if it's running, otherwise use local implementation
-    if use_coordinator?() do
-      Kylix.Consensus.ValidatorCoordinator.add_validator(validator_id, pubkey, known_by)
-    else
-      GenServer.call(__MODULE__, {:add_validator, validator_id, pubkey, known_by})
-    end
+    GenServer.call(__MODULE__, {:add_validator, validator_id, pubkey, known_by})
   end
 
   # Reset the transaction counter to a specific value (used for testing)
@@ -192,16 +182,7 @@ defmodule Kylix.BlockchainServer do
   # Shared implementation for adding transactions
   # Used by both handle_call and handle_cast to avoid recursive calls
   defp do_add_transaction(s, p, o, validator_id, signature, state) do
-    # Check if ValidatorCoordinator is available for validator checks
-    validator_exists =
-      if use_coordinator?() do
-        Kylix.Consensus.ValidatorCoordinator.validator_exists?(validator_id)
-      else
-        MapSet.member?(state.validator_set, validator_id)
-      end
-
-    # First, check if validator exists
-    if !validator_exists do
+    if !MapSet.member?(state.validator_set, validator_id) do
       {{:error, :unknown_validator}, state}
     else
       # Validate RDF structure
@@ -261,65 +242,42 @@ defmodule Kylix.BlockchainServer do
   end
 
   defp public_key_for(validator_id, state) do
-    if use_coordinator?() do
-      case Kylix.Consensus.ValidatorCoordinator.get_validator_key(validator_id) do
-        {:ok, key} -> key
-        _ -> Map.get(state.public_keys, validator_id)
-      end
-    else
-      Map.get(state.public_keys, validator_id)
-    end
+    Map.get(state.public_keys, validator_id)
   end
 
   defp accept_verified_transaction(s, p, o, validator_id, signature, timestamp, tx_hash, state) do
-    if Mix.env() != :test and not this_validators_turn?(validator_id, state) do
-      record_failed_transaction(validator_id)
-      {{:error, :not_your_turn}, state}
-    else
-      start_time = System.monotonic_time(:microsecond)
-      tx_id = "tx#{state.tx_count + 1}"
+    start_time = System.monotonic_time(:microsecond)
+    tx_id = "tx#{state.tx_count + 1}"
 
-      tx_data = %{
-        subject: s,
-        predicate: p,
-        object: o,
-        validator: validator_id,
-        signature: signature,
-        timestamp: timestamp,
-        hash: Base.encode16(tx_hash)
-      }
+    tx_data = %{
+      subject: s,
+      predicate: p,
+      object: o,
+      validator: validator_id,
+      signature: signature,
+      timestamp: timestamp,
+      hash: Base.encode16(tx_hash)
+    }
 
-      :ok = Kylix.Storage.Coordinator.add_node(tx_id, tx_data)
+    :ok = Kylix.Storage.Coordinator.add_node(tx_id, tx_data)
 
-      if state.tx_count > 0 do
-        prev_tx_id = "tx#{state.tx_count}"
-        :ok = Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
-      end
-
-      if Mix.env() != :test and use_coordinator?() do
-        tx_time = System.monotonic_time(:microsecond) - start_time
-
-        Kylix.Consensus.ValidatorCoordinator.record_transaction_performance(
-          validator_id,
-          true,
-          tx_time
-        )
-      end
-
-      new_state = %{state | tx_count: state.tx_count + 1, last_block_time: timestamp}
-      {{:ok, tx_id}, new_state}
+    if state.tx_count > 0 do
+      prev_tx_id = "tx#{state.tx_count}"
+      :ok = Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
     end
-  end
 
-  defp this_validators_turn?(validator_id, state) do
-    current_validator =
-      if use_coordinator?() do
-        Kylix.Consensus.ValidatorCoordinator.get_current_validator()
-      else
-        Enum.at(state.validators, rem(state.tx_count, length(state.validators)))
-      end
+    if Mix.env() != :test and use_coordinator?() do
+      tx_time = System.monotonic_time(:microsecond) - start_time
 
-    current_validator == validator_id
+      Kylix.Consensus.ValidatorCoordinator.record_transaction_performance(
+        validator_id,
+        true,
+        tx_time
+      )
+    end
+
+    new_state = %{state | tx_count: state.tx_count + 1, last_block_time: timestamp}
+    {{:ok, tx_id}, new_state}
   end
 
   defp record_failed_transaction(validator_id) do

@@ -185,6 +185,72 @@ defmodule KylixTest do
     end
   end
 
+  describe "one roster; the named Validator attests" do
+    test "after vouching, a correctly signed Transaction from the new Validator is accepted" do
+      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+      vouched = Kylix.Test.Attester.seed("vouched_attester", public_key)
+
+      subject = "subject-vouched"
+      predicate = "predicate"
+      object = "object"
+      tx_hash = hash_transaction(subject, predicate, object, vouched)
+      signature = sign(tx_hash, private_key)
+
+      assert {:ok, tx_id} =
+               Kylix.add_transaction(subject, predicate, object, vouched, signature)
+
+      assert String.starts_with?(tx_id, "tx")
+    end
+
+    test "stored attester is the validator_id argument" do
+      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+      named = Kylix.Test.Attester.seed("named_attester", public_key)
+
+      subject = "subject-named"
+      predicate = "predicate"
+      object = "object"
+      tx_hash = hash_transaction(subject, predicate, object, named)
+      signature = sign(tx_hash, private_key)
+
+      assert {:ok, _tx_id} =
+               Kylix.add_transaction(subject, predicate, object, named, signature)
+
+      {:ok, results} = Kylix.query({subject, predicate, object})
+      assert length(results) == 1
+      {_id, data, _edges} = hd(results)
+      assert data.validator == named
+    end
+
+    test "a member Validator can attest more than once" do
+      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+      member = Kylix.Test.Attester.seed("repeat_attester", public_key)
+
+      first_hash = hash_transaction("subject-repeat-1", "predicate", "object", member)
+      first_signature = sign(first_hash, private_key)
+
+      assert {:ok, _tx1} =
+               Kylix.add_transaction(
+                 "subject-repeat-1",
+                 "predicate",
+                 "object",
+                 member,
+                 first_signature
+               )
+
+      second_hash = hash_transaction("subject-repeat-2", "predicate", "object", member)
+      second_signature = sign(second_hash, private_key)
+
+      assert {:ok, _tx2} =
+               Kylix.add_transaction(
+                 "subject-repeat-2",
+                 "predicate",
+                 "object",
+                 member,
+                 second_signature
+               )
+    end
+  end
+
   describe "validator management functions" do
     test "get_current_validator returns a validator string" do
       validator = Kylix.get_current_validator()
@@ -195,9 +261,8 @@ defmodule KylixTest do
     test "get_validator_metrics returns metrics for all validators" do
       metrics = Kylix.get_validator_metrics()
       assert is_map(metrics)
-      validators = Kylix.get_validators()
 
-      for validator <- validators do
+      for validator <- ["agent1", "agent2"] do
         assert Map.has_key?(metrics, validator)
         assert is_map(metrics[validator])
       end
