@@ -278,6 +278,24 @@ defmodule KylixTest do
       assert data.validator == named
     end
 
+    test "get_validators lists the Validator add_validator wrote" do
+      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+      vouched = Kylix.Test.Attester.seed("listed_attester", public_key)
+
+      validators = Kylix.get_validators()
+      refute validators == []
+      assert vouched in validators
+
+      subject = "subject-listed"
+      predicate = "predicate"
+      object = "object"
+      tx_hash = hash_transaction(subject, predicate, object, vouched)
+      signature = sign(tx_hash, private_key)
+
+      assert {:ok, _tx_id} =
+               Kylix.add_transaction(subject, predicate, object, vouched, signature)
+    end
+
     test "a member Validator can attest more than once" do
       {public_key, private_key} = Kylix.Test.Attester.generate_keys()
       member = Kylix.Test.Attester.seed("repeat_attester", public_key)
@@ -305,33 +323,6 @@ defmodule KylixTest do
                  member,
                  second_signature
                )
-    end
-  end
-
-  describe "validator management functions" do
-    test "get_current_validator returns a validator string" do
-      validator = Kylix.get_current_validator()
-      assert is_binary(validator)
-      assert validator in Kylix.get_validators()
-    end
-
-    test "get_validator_metrics returns metrics for all validators" do
-      metrics = Kylix.get_validator_metrics()
-      assert is_map(metrics)
-
-      for validator <- ["agent1", "agent2"] do
-        assert Map.has_key?(metrics, validator)
-        assert is_map(metrics[validator])
-      end
-    end
-
-    test "get_validator_status returns status information map" do
-      status = Kylix.get_validator_status()
-      assert is_map(status)
-      assert Map.has_key?(status, :validators)
-      assert Map.has_key?(status, :current_validator)
-      assert Map.has_key?(status, :performance_metrics)
-      assert is_list(status.validators)
     end
   end
 

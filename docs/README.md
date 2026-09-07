@@ -85,7 +85,6 @@ Key implementation components include:
 
 - **DAGEngine and PersistentDAGEngine**: Complementary storage engines for in-memory and persistent data storage.
 - **BlockchainServer**: Core transaction processing logic including validation, consensus enforcement, and DAG maintenance.
-- **ValidatorCoordinator**: Management of validator selection and performance tracking.
 - **ValidatorNetwork**: Network communication between validators including transaction broadcasting.
 - **SparqlEngine**: SPARQL query parsing, optimization, and execution against the DAG.
 - **TransactionQueue**: Asynchronous transaction processing for improved throughput.

@@ -231,7 +231,6 @@ defmodule Kylix.BlockchainServer do
                         "Invalid signature from validator #{validator_id}: #{reason}"
                       )
 
-                      record_failed_transaction(validator_id)
                       {{:error, :invalid_signature}, state}
                   end
               end
@@ -246,7 +245,6 @@ defmodule Kylix.BlockchainServer do
   end
 
   defp accept_verified_transaction(s, p, o, validator_id, signature, timestamp, tx_hash, state) do
-    start_time = System.monotonic_time(:microsecond)
     tx_id = "tx#{state.tx_count + 1}"
 
     tx_data = %{
@@ -266,24 +264,8 @@ defmodule Kylix.BlockchainServer do
       :ok = Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
     end
 
-    if Mix.env() != :test and use_coordinator?() do
-      tx_time = System.monotonic_time(:microsecond) - start_time
-
-      Kylix.Consensus.ValidatorCoordinator.record_transaction_performance(
-        validator_id,
-        true,
-        tx_time
-      )
-    end
-
     new_state = %{state | tx_count: state.tx_count + 1, last_block_time: timestamp}
     {{:ok, tx_id}, new_state}
-  end
-
-  defp record_failed_transaction(validator_id) do
-    if Mix.env() != :test and use_coordinator?() do
-      Kylix.Consensus.ValidatorCoordinator.record_transaction_performance(validator_id, false)
-    end
   end
 
   # Check for duplicate transactions
@@ -294,14 +276,6 @@ defmodule Kylix.BlockchainServer do
       # Assume no duplicates on error
       {:error, _reason} -> false
     end
-  end
-
-  # Helper to check if ValidatorCoordinator is running and should be used
-  defp use_coordinator?() do
-    # Check if the ValidatorCoordinator module is available
-    # Check if the process is running
-    Code.ensure_loaded?(Kylix.Consensus.ValidatorCoordinator) &&
-      !is_nil(Process.whereis(Kylix.Consensus.ValidatorCoordinator))
   end
 
   # Enhancement: Add function to check for large data to prevent DOS attacks

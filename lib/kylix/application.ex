@@ -46,8 +46,6 @@ defmodule Kylix.Application do
       if Mix.env() != :test do
         {Kylix.Storage.PersistentDAGEngine, [db_path: config.db_path]}
       end,
-      {Kylix.Consensus.ValidatorCoordinator,
-       [validators: validators, config_dir: config.validators_dir]},
       {Kylix.BlockchainServer, [validators: validators, config_dir: config.validators_dir]},
       {Kylix.Network.ValidatorNetwork, [port: config.port, node_id: config.node_id]},
       {Kylix.Server.TransactionQueue, []},

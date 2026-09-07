@@ -59,9 +59,6 @@ defmodule Kylix.Benchmark.TransactionSpeed do
 
           {:error, reason} ->
             IO.puts("Transaction #{i} failed: #{inspect(reason)}")
-            # Print the current validator to debug
-            current_validator = Kylix.Consensus.ValidatorCoordinator.status().current_validator
-            IO.puts("Current validator after failure: #{current_validator}")
         end
 
         {result, tx_time}

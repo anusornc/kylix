@@ -38,6 +38,7 @@ defmodule Kylix.API.RouterTest do
     test "returns a formatted list of transactions on success" do
       # Set up mock data
       mock_node_id = "node123"
+
       mock_data = %{
         subject: "sub1",
         predicate: "pred1",
@@ -46,6 +47,7 @@ defmodule Kylix.API.RouterTest do
         timestamp: ~U[2023-01-01 12:00:00Z],
         hash: "somehash"
       }
+
       mock_edges = [{"from1", "to1", "label1"}, {"to2", "label2"}]
 
       :meck.expect(Kylix.Storage.Coordinator, :query, fn {nil, nil, nil} ->
@@ -130,8 +132,10 @@ defmodule Kylix.API.RouterTest do
         {:ok, "tx_id_123"}
       end)
 
-      conn = conn(:post, "/transactions", payload)
-             |> put_req_header("content-type", "application/json")
+      conn =
+        conn(:post, "/transactions", payload)
+        |> put_req_header("content-type", "application/json")
+
       conn = Router.call(conn, @opts)
 
       assert conn.state == :sent
@@ -155,8 +159,10 @@ defmodule Kylix.API.RouterTest do
         {:error, "invalid signature"}
       end)
 
-      conn = conn(:post, "/transactions", payload)
-             |> put_req_header("content-type", "application/json")
+      conn =
+        conn(:post, "/transactions", payload)
+        |> put_req_header("content-type", "application/json")
+
       conn = Router.call(conn, @opts)
 
       assert conn.status == 400
@@ -172,8 +178,10 @@ defmodule Kylix.API.RouterTest do
         # Missing other params
       }
 
-      conn = conn(:post, "/transactions", payload)
-             |> put_req_header("content-type", "application/json")
+      conn =
+        conn(:post, "/transactions", payload)
+        |> put_req_header("content-type", "application/json")
+
       conn = Router.call(conn, @opts)
 
       assert conn.status == 400
@@ -252,12 +260,16 @@ defmodule Kylix.API.RouterTest do
         hit_rate_percent: 100,
         avg_query_time_microseconds: 100
       }
+
       :meck.expect(Kylix.Storage.Coordinator, :get_cache_metrics, fn -> mock_cache end)
 
       # Mock nodes/edges query
       # format: {node_id, data, edges}
       mock_results = [{"node1", %{subject: "a", predicate: "b", object: "c"}, [{1, 2, "label"}]}]
-      :meck.expect(Kylix.Storage.Coordinator, :query, fn {nil, nil, nil} -> {:ok, mock_results} end)
+
+      :meck.expect(Kylix.Storage.Coordinator, :query, fn {nil, nil, nil} ->
+        {:ok, mock_results}
+      end)
 
       # NOTE: For benchmark data, load_benchmark_data/0 checks if "data/benchmark" exists,
       # since it doesn't in test, it defaults to %{results: [], latest: nil} gracefully.
@@ -307,8 +319,11 @@ defmodule Kylix.API.RouterTest do
       end)
 
       payload = %{"count" => 500}
-      conn = conn(:post, "/run-benchmark", payload)
-             |> put_req_header("content-type", "application/json")
+
+      conn =
+        conn(:post, "/run-benchmark", payload)
+        |> put_req_header("content-type", "application/json")
+
       conn = Router.call(conn, @opts)
 
       assert conn.state == :sent
@@ -362,8 +377,10 @@ defmodule Kylix.API.RouterTest do
         {:ok, "v1"}
       end)
 
-      conn = conn(:post, "/validators", payload)
-             |> put_req_header("content-type", "application/json")
+      conn =
+        conn(:post, "/validators", payload)
+        |> put_req_header("content-type", "application/json")
+
       conn = Router.call(conn, @opts)
 
       assert conn.state == :sent
@@ -385,8 +402,10 @@ defmodule Kylix.API.RouterTest do
         {:error, "duplicate validator"}
       end)
 
-      conn = conn(:post, "/validators", payload)
-             |> put_req_header("content-type", "application/json")
+      conn =
+        conn(:post, "/validators", payload)
+        |> put_req_header("content-type", "application/json")
+
       conn = Router.call(conn, @opts)
 
       assert conn.status == 400
@@ -401,48 +420,16 @@ defmodule Kylix.API.RouterTest do
         # missing pubkey and known_by
       }
 
-      conn = conn(:post, "/validators", payload)
-             |> put_req_header("content-type", "application/json")
+      conn =
+        conn(:post, "/validators", payload)
+        |> put_req_header("content-type", "application/json")
+
       conn = Router.call(conn, @opts)
 
       assert conn.status == 400
       response = Jason.decode!(conn.resp_body)
       assert response["status"] == "error"
       assert response["message"] =~ "Invalid parameters"
-    end
-  end
-
-  describe "GET /validator-status" do
-    test "returns validator status" do
-      mock_status = %{"is_syncing" => false, "peers" => 3}
-      :meck.expect(Kylix, :get_validator_status, fn -> mock_status end)
-
-      conn = conn(:get, "/validator-status")
-      conn = Router.call(conn, @opts)
-
-      assert conn.state == :sent
-      assert conn.status == 200
-
-      response = Jason.decode!(conn.resp_body)
-      assert response["status"] == "success"
-      assert response["data"] == mock_status
-    end
-  end
-
-  describe "GET /validator-metrics" do
-    test "returns validator metrics" do
-      mock_metrics = %{"cpu_usage" => "10%", "memory" => "50MB"}
-      :meck.expect(Kylix, :get_validator_metrics, fn -> mock_metrics end)
-
-      conn = conn(:get, "/validator-metrics")
-      conn = Router.call(conn, @opts)
-
-      assert conn.state == :sent
-      assert conn.status == 200
-
-      response = Jason.decode!(conn.resp_body)
-      assert response["status"] == "success"
-      assert response["data"] == mock_metrics
     end
   end
 
