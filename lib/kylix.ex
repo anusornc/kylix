@@ -12,8 +12,9 @@ defmodule Kylix do
   @doc """
   Asynchronously adds a transaction to the blockchain via the transaction queue.
 
-  The transaction queue handles validator assignment in a round-robin fashion,
-  which can significantly improve throughput in benchmarking scenarios.
+  The submitted `validator_id` is the attesting Validator. The queue later
+  calls `add_transaction/5` with that id; it does not assign or rewrite
+  the attester.
 
   ## Parameters
 
@@ -52,7 +53,7 @@ defmodule Kylix do
     Kylix.BlockchainServer.add_validator(validator_id, pubkey, known_by)
   end
 
-   # Add these new functions for validator management
+  # Add these new functions for validator management
 
   @doc """
   Gets the current validator selected for transaction processing.

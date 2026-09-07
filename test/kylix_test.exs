@@ -110,6 +110,65 @@ defmodule KylixTest do
 
       assert is_reference(ref)
     end
+
+    test "async submit preserves the caller's attester through accept" do
+      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+      member = Kylix.Test.Attester.seed("async_attester", public_key)
+
+      subject = "subject-async-attester"
+      predicate = "predicate"
+      object = "object"
+      tx_hash = hash_transaction(subject, predicate, object, member)
+      signature = sign(tx_hash, private_key)
+
+      assert {:ok, ref} =
+               Kylix.add_transaction_async(subject, predicate, object, member, signature)
+
+      assert is_reference(ref)
+
+      results = wait_for_query({subject, predicate, object})
+      assert length(results) == 1
+      {_id, data, _edges} = hd(results)
+      assert data.validator == member
+    end
+
+    test "two async submits from the same member both accept as that member" do
+      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+      member = Kylix.Test.Attester.seed("async_repeat_attester", public_key)
+
+      first_subject = "subject-async-repeat-1"
+      second_subject = "subject-async-repeat-2"
+      predicate = "predicate"
+      first_object = "object-a"
+      second_object = "object-b"
+
+      first_hash = hash_transaction(first_subject, predicate, first_object, member)
+      second_hash = hash_transaction(second_subject, predicate, second_object, member)
+
+      assert {:ok, _ref1} =
+               Kylix.add_transaction_async(
+                 first_subject,
+                 predicate,
+                 first_object,
+                 member,
+                 sign(first_hash, private_key)
+               )
+
+      assert {:ok, _ref2} =
+               Kylix.add_transaction_async(
+                 second_subject,
+                 predicate,
+                 second_object,
+                 member,
+                 sign(second_hash, private_key)
+               )
+
+      [{_id1, data1, _edges1}] = wait_for_query({first_subject, predicate, first_object})
+      [{_id2, data2, _edges2}] = wait_for_query({second_subject, predicate, second_object})
+
+      assert data1.validator == member
+      assert data2.validator == member
+    end
   end
 
   describe "add transaction with invalid validator" do
@@ -151,8 +210,6 @@ defmodule KylixTest do
       assert is_map(status)
       assert Map.has_key?(status, :queue_length)
       assert Map.has_key?(status, :processing)
-      assert Map.has_key?(status, :validators)
-      assert Map.has_key?(status, :current_validator)
       assert Map.has_key?(status, :batch_size)
       assert Map.has_key?(status, :processing_interval)
       assert Map.has_key?(status, :stats)
@@ -275,6 +332,26 @@ defmodule KylixTest do
       assert Map.has_key?(status, :current_validator)
       assert Map.has_key?(status, :performance_metrics)
       assert is_list(status.validators)
+    end
+  end
+
+  defp wait_for_query(pattern, timeout_ms \\ 2000) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_wait_for_query(pattern, deadline)
+  end
+
+  defp do_wait_for_query(pattern, deadline) do
+    case Kylix.query(pattern) do
+      {:ok, [_ | _] = results} ->
+        results
+
+      _ ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          flunk("Transaction was not accepted before timeout: #{inspect(pattern)}")
+        else
+          Process.sleep(50)
+          do_wait_for_query(pattern, deadline)
+        end
     end
   end
 end

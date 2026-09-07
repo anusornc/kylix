@@ -133,8 +133,6 @@ defmodule Kylix.Server.TransactionQueueTest do
     initial_state = %{
       queue: :queue.new(),
       processing: false,
-      current_validator_index: 0,
-      validators: ["agent1", "agent2"],
       batch_size: 10,
       processing_interval: 100,
       transaction_statuses: %{
