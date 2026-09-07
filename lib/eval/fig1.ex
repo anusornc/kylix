@@ -28,8 +28,7 @@ defmodule Kylix.Eval.Fig1 do
       s = Map.fetch!(fact, "s")
       p = Map.fetch!(fact, "p")
       o = Map.fetch!(fact, "o")
-      timestamp = DateTime.utc_now()
-      tx_hash = SignatureVerifier.hash_transaction(s, p, o, validator_id, timestamp)
+      tx_hash = SignatureVerifier.hash_transaction(s, p, o, validator_id)
       signature = SignatureVerifier.sign(tx_hash, private_key)
 
       case Kylix.add_transaction(s, p, o, validator_id, signature) do

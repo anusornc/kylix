@@ -24,7 +24,7 @@ defmodule Kylix.Auth.SignatureVerifier do
 
     try do
       # Verify using RSA or ECDSA
-      case :crypto.verify(:rsa, :sha256, data_hash, signature, [public_key, :rsa]) do
+      case :crypto.verify(:rsa, :sha256, data_hash, signature, public_key) do
         true -> :ok
         false -> {:error, :invalid_signature}
       end
@@ -34,11 +34,12 @@ defmodule Kylix.Auth.SignatureVerifier do
   end
 
   @doc """
-  Creates a transaction hash from transaction data.
+  Creates a transaction hash from the statement and attesting Validator.
+
+  Accept-time is not part of the signed payload.
   """
-  def hash_transaction(subject, predicate, object, validator_id, timestamp) do
-    # Concatenate all fields and hash them
-    data = "#{subject}|#{predicate}|#{object}|#{validator_id}|#{DateTime.to_iso8601(timestamp)}"
+  def hash_transaction(subject, predicate, object, validator_id) do
+    data = "#{subject}|#{predicate}|#{object}|#{validator_id}"
     :crypto.hash(:sha256, data)
   end
 

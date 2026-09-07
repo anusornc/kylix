@@ -13,30 +13,39 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
     :ok = Application.stop(:kylix)
     {:ok, _} = Application.ensure_all_started(:kylix)
 
-    # Reset transaction count
     :ok = BlockchainServer.reset_tx_count(0)
 
-    # Don't set up mocks in the global setup to avoid issues with teardown
-    # Each test that needs mocking will set it up individually
+    {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+    attester = Kylix.Test.Attester.seed("attester1", public_key)
+    attester2 = Kylix.Test.Attester.seed("attester2", public_key)
 
-    :ok
+    {:ok,
+     private_key: private_key, public_key: public_key, attester: attester, attester2: attester2}
+  end
+
+  defp record(subject, predicate, object, validator_id, private_key) do
+    signature =
+      Kylix.Test.Attester.signature(subject, predicate, object, validator_id, private_key)
+
+    Kylix.add_transaction(subject, predicate, object, validator_id, signature)
   end
 
   describe "end-to-end transaction workflow" do
-    test "add transaction, verify storage, and query" do
-      # 1. Add a transaction
+    test "add transaction, verify storage, and query", %{
+      private_key: private_key,
+      attester: attester
+    } do
       subject = "Alice"
       predicate = "owns"
       object = "Car123"
 
-      assert {:ok, tx_id} = Kylix.add_transaction(subject, predicate, object, "agent1", "valid_sig")
+      assert {:ok, tx_id} = record(subject, predicate, object, attester, private_key)
 
-      # 2. Verify transaction was stored in DAG
       assert {:ok, node_data} = DAGEngine.get_node(tx_id)
       assert node_data.subject == subject
       assert node_data.predicate == predicate
       assert node_data.object == object
-      assert node_data.validator == "agent1"
+      assert node_data.validator == attester
 
       # 3. Query for the transaction using different query methods
 
@@ -60,13 +69,14 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
       # as we don't have direct access to that functionality in tests
     end
 
-    test "add multiple transactions, verify linkage and query across transactions" do
-      # 1. Add several related transactions
-      {:ok, tx_id1} = Kylix.add_transaction("Alice", "owns", "Car123", "agent1", "valid_sig")
-      Process.sleep(10) # Ensure unique timestamps
-      {:ok, tx_id2} = Kylix.add_transaction("Alice", "drives", "Car123", "agent2", "valid_sig")
-      Process.sleep(10)
-      {:ok, tx_id3} = Kylix.add_transaction("Bob", "manufactures", "Car123", "agent1", "valid_sig")
+    test "add multiple transactions, verify linkage and query across transactions", %{
+      private_key: private_key,
+      attester: attester,
+      attester2: attester2
+    } do
+      {:ok, tx_id1} = record("Alice", "owns", "Car123", attester, private_key)
+      {:ok, tx_id2} = record("Alice", "drives", "Car123", attester2, private_key)
+      {:ok, tx_id3} = record("Bob", "manufactures", "Car123", attester, private_key)
 
       # 2. Check transaction linkage in DAG
       # All transactions should be linked in sequence
@@ -88,17 +98,17 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
 
       # Verify tx1 has an edge to tx2
       assert Enum.any?(tx1_edges, fn
-        {^tx_id1, ^tx_id2, "confirms"} -> true
-        {^tx_id2, "confirms"} -> true
-        _ -> false
-      end)
+               {^tx_id1, ^tx_id2, "confirms"} -> true
+               {^tx_id2, "confirms"} -> true
+               _ -> false
+             end)
 
       # Verify tx2 has an edge to tx3
       assert Enum.any?(tx2_edges, fn
-        {^tx_id2, ^tx_id3, "confirms"} -> true
-        {^tx_id3, "confirms"} -> true
-        _ -> false
-      end)
+               {^tx_id2, ^tx_id3, "confirms"} -> true
+               {^tx_id3, "confirms"} -> true
+               _ -> false
+             end)
 
       # 3. Query by object to find all related transactions
       {:ok, car_results} = Kylix.query({nil, nil, "Car123"})
@@ -111,22 +121,21 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
   end
 
   describe "validator operations and transaction validation" do
-    test "add new validator and use it for transactions" do
-      # 1. Get initial validators
+    test "add new validator and use it for transactions", %{
+      public_key: public_key,
+      private_key: private_key
+    } do
       initial_validators = Kylix.get_validators()
       assert "agent1" in initial_validators
       assert "agent2" in initial_validators
 
-      # 2. Add a new validator (vouched by agent1)
-      new_validator = "new_agent"
-      {:ok, ^new_validator} = Kylix.add_validator(new_validator, "new_pubkey", "agent1")
+      new_validator = Kylix.Test.Attester.seed("new_attester", public_key)
 
-      # 3. Verify the new validator is in the list
       updated_validators = Kylix.get_validators()
       assert new_validator in updated_validators
 
-      # 4. Use the new validator to add a transaction
-      {:ok, tx_id} = Kylix.add_transaction("TestSubject", "TestPredicate", "TestObject", new_validator, "valid_sig")
+      {:ok, tx_id} =
+        record("TestSubject", "TestPredicate", "TestObject", new_validator, private_key)
 
       # 5. Verify the transaction was added with the correct validator
       {:ok, node_data} = DAGEngine.get_node(tx_id)
@@ -141,13 +150,12 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
   end
 
   describe "query engine integration" do
-    setup do
-      # Add test data to work with
-      Kylix.add_transaction("Alice", "knows", "Bob", "agent1", "valid_sig")
-      Kylix.add_transaction("Bob", "knows", "Charlie", "agent2", "valid_sig")
-      Kylix.add_transaction("Charlie", "knows", "Dave", "agent1", "valid_sig")
-      Kylix.add_transaction("Alice", "likes", "Coffee", "agent2", "valid_sig")
-      Kylix.add_transaction("Bob", "likes", "Tea", "agent1", "valid_sig")
+    setup %{private_key: private_key, attester: attester, attester2: attester2} do
+      record("Alice", "knows", "Bob", attester, private_key)
+      record("Bob", "knows", "Charlie", attester2, private_key)
+      record("Charlie", "knows", "Dave", attester, private_key)
+      record("Alice", "likes", "Coffee", attester2, private_key)
+      record("Bob", "likes", "Tea", attester, private_key)
 
       :ok
     end
@@ -167,6 +175,7 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
               o = if String.starts_with?(o, "?"), do: nil, else: String.trim(o, "\"")
 
               {s, p, o}
+
             nil ->
               raise "Invalid SPARQL query format"
           end
@@ -214,14 +223,25 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
   end
 
   describe "network integration" do
-    test "receive transaction from network" do
-      # 1. Create a transaction as if received from the network
+    test "receive transaction from network", %{
+      private_key: private_key,
+      attester: attester
+    } do
+      signature =
+        Kylix.Test.Attester.signature(
+          "NetworkSubject",
+          "NetworkPredicate",
+          "NetworkObject",
+          attester,
+          private_key
+        )
+
       tx_data = %{
         "subject" => "NetworkSubject",
         "predicate" => "NetworkPredicate",
         "object" => "NetworkObject",
-        "validator" => "agent1",
-        "signature" => "valid_sig"
+        "validator" => attester,
+        "signature" => signature
       }
 
       # 2. Send it to the blockchain server directly (simulating reception from network)
@@ -237,26 +257,21 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
       assert data.subject == "NetworkSubject"
       assert data.predicate == "NetworkPredicate"
       assert data.object == "NetworkObject"
-      assert data.validator == "agent1"
+      assert data.validator == attester
     end
   end
 
   describe "transaction verification integration" do
-    test "transaction hashing workflow" do
-      # 1. Create transaction data
+    test "transaction hashing workflow", %{private_key: private_key, attester: attester} do
       subject = "VerifySubject"
       predicate = "VerifyPredicate"
       object = "VerifyObject"
-      validator = "agent1"
-      timestamp = DateTime.utc_now()
 
-      # 2. Hash the transaction
-      tx_hash = SignatureVerifier.hash_transaction(subject, predicate, object, validator, timestamp)
+      tx_hash = SignatureVerifier.hash_transaction(subject, predicate, object, attester)
       assert is_binary(tx_hash)
-      assert byte_size(tx_hash) == 32  # SHA-256 hash should be 32 bytes
+      assert byte_size(tx_hash) == 32
 
-      # 3. Verify a transaction can be added without mocking
-      {:ok, tx_id} = Kylix.add_transaction(subject, predicate, object, validator, "valid_sig")
+      {:ok, tx_id} = record(subject, predicate, object, attester, private_key)
 
       # 4. Verify the transaction was added
       {:ok, tx_data} = DAGEngine.get_node(tx_id)
@@ -267,11 +282,14 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
   end
 
   describe "storage engine integration" do
-    test "DAG structure is maintained across operations" do
-      # 1. Add a sequence of transactions that form a chain
-      {:ok, tx1} = Kylix.add_transaction("First", "comes_before", "Second", "agent1", "valid_sig")
-      {:ok, tx2} = Kylix.add_transaction("Second", "comes_before", "Third", "agent2", "valid_sig")
-      {:ok, tx3} = Kylix.add_transaction("Third", "comes_before", "Fourth", "agent1", "valid_sig")
+    test "DAG structure is maintained across operations", %{
+      private_key: private_key,
+      attester: attester,
+      attester2: attester2
+    } do
+      {:ok, tx1} = record("First", "comes_before", "Second", attester, private_key)
+      {:ok, tx2} = record("Second", "comes_before", "Third", attester2, private_key)
+      {:ok, tx3} = record("Third", "comes_before", "Fourth", attester, private_key)
 
       # 2. Query to get the full DAG
       {:ok, results} = DAGEngine.query({nil, nil, nil})
@@ -288,37 +306,43 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
 
       # Verify edges exist in the correct order
       # Check if tx1 has an edge to tx2
-      tx1_to_tx2 = Enum.any?(tx1_edges, fn
-        {^tx1, ^tx2, "confirms"} -> true
-        {^tx2, "confirms"} -> true
-        _ -> false
-      end)
+      tx1_to_tx2 =
+        Enum.any?(tx1_edges, fn
+          {^tx1, ^tx2, "confirms"} -> true
+          {^tx2, "confirms"} -> true
+          _ -> false
+        end)
+
       assert tx1_to_tx2
 
       # Check if tx2 has an edge to tx3
-      tx2_to_tx3 = Enum.any?(tx2_edges, fn
-        {^tx2, ^tx3, "confirms"} -> true
-        {^tx3, "confirms"} -> true
-        _ -> false
-      end)
+      tx2_to_tx3 =
+        Enum.any?(tx2_edges, fn
+          {^tx2, ^tx3, "confirms"} -> true
+          {^tx3, "confirms"} -> true
+          _ -> false
+        end)
+
       assert tx2_to_tx3
     end
   end
 
   describe "full application workflow" do
-    test "complete transaction lifecycle with network broadcast and query" do
-      # 1. Add validator (simulates validator setup)
-      new_validator = "integration_validator"
-      {:ok, ^new_validator} = Kylix.add_validator(new_validator, "pubkey", "agent1")
+    test "complete transaction lifecycle with network broadcast and query", %{
+      public_key: public_key,
+      private_key: private_key,
+      attester2: attester2
+    } do
+      new_validator = Kylix.Test.Attester.seed("workflow_attester", public_key)
 
-      # 2. Add a transaction through the public API
-      {:ok, tx_id} = Kylix.add_transaction(
-        "IntegrationSubject",
-        "IntegrationPredicate",
-        "IntegrationObject",
-        new_validator,
-        "valid_sig"
-      )
+      {:ok, tx_id} =
+        record(
+          "IntegrationSubject",
+          "IntegrationPredicate",
+          "IntegrationObject",
+          new_validator,
+          private_key
+        )
 
       # 3. In a real implementation, we would verify network broadcast
       # Skip this check as we don't have direct access to that functionality
@@ -336,8 +360,15 @@ defmodule Kylix.Integration.NetworkIntegrationTest do
         "subject" => "IntegrationSubject",
         "predicate" => "AnotherPredicate",
         "object" => "AnotherObject",
-        "validator" => "agent2",
-        "signature" => "valid_sig"
+        "validator" => attester2,
+        "signature" =>
+          Kylix.Test.Attester.signature(
+            "IntegrationSubject",
+            "AnotherPredicate",
+            "AnotherObject",
+            attester2,
+            private_key
+          )
       }
 
       BlockchainServer.receive_transaction(network_tx)

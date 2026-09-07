@@ -14,19 +14,20 @@ defmodule Kylix.BlockchainServerTest do
     # Reset transaction count
     :ok = Kylix.BlockchainServer.reset_tx_count(0)
 
-    # Get test key pair
-    {:ok, %{private_key: private_key, public_key: public_key}} = get_test_key_pair()
-    {:ok, private_key: private_key, public_key: public_key}
-  end
+    {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+    attester = Kylix.Test.Attester.seed("attester1", public_key)
+    attester2 = Kylix.Test.Attester.seed("attester2", public_key)
 
-  defp get_test_key_pair() do
-    GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
+    {:ok,
+     private_key: private_key, public_key: public_key, attester: attester, attester2: attester2}
   end
 
   describe "transaction operations" do
-    test "add_transaction with valid validator", %{private_key: private_key} do
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction("subject1", "predicate1", "object1", "agent1", timestamp)
+    test "add_transaction with valid validator", %{
+      private_key: private_key,
+      attester: attester
+    } do
+      tx_hash = hash_transaction("subject1", "predicate1", "object1", attester)
       signature = sign(tx_hash, private_key)
 
       assert {:ok, tx_id} =
@@ -34,7 +35,7 @@ defmodule Kylix.BlockchainServerTest do
                  "subject1",
                  "predicate1",
                  "object1",
-                 "agent1",
+                 attester,
                  signature
                )
 
@@ -42,8 +43,7 @@ defmodule Kylix.BlockchainServerTest do
     end
 
     test "add_transaction with invalid validator", %{private_key: private_key} do
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction("subject1", "predicate1", "object1", "unknown_agent", timestamp)
+      tx_hash = hash_transaction("subject1", "predicate1", "object1", "unknown_agent")
       signature = sign(tx_hash, private_key)
 
       assert {:error, :unknown_validator} =
@@ -56,22 +56,29 @@ defmodule Kylix.BlockchainServerTest do
                )
     end
 
-    test "add_transaction with invalid signature", %{private_key: _private_key} do
-      # Instead of modifying a binary signature, use a clearly invalid one
-      assert {:error, :verification_failed} =
+    test "add_transaction with invalid signature", %{
+      private_key: private_key,
+      attester: attester
+    } do
+      other_hash = hash_transaction("other_subject", "predicate1", "object1", attester)
+      bad_signature = sign(other_hash, private_key)
+
+      assert {:error, :invalid_signature} =
                BlockchainServer.add_transaction(
                  "subject1",
                  "predicate1",
                  "object1",
-                 "agent1",
-                 "invalid_signature_data"
+                 attester,
+                 bad_signature
                )
     end
 
-    test "multiple transactions from different validators",
-         %{private_key: private_key} do
-      timestamp1 = DateTime.utc_now()
-      tx_hash1 = hash_transaction("subject1", "predicate1", "object1", "agent1", timestamp1)
+    test "multiple transactions from different validators", %{
+      private_key: private_key,
+      attester: attester,
+      attester2: attester2
+    } do
+      tx_hash1 = hash_transaction("subject1", "predicate1", "object1", attester)
       signature1 = sign(tx_hash1, private_key)
 
       assert {:ok, tx_id1} =
@@ -79,12 +86,11 @@ defmodule Kylix.BlockchainServerTest do
                  "subject1",
                  "predicate1",
                  "object1",
-                 "agent1",
+                 attester,
                  signature1
                )
 
-      timestamp2 = DateTime.utc_now()
-      tx_hash2 = hash_transaction("subject2", "predicate1", "object2", "agent2", timestamp2)
+      tx_hash2 = hash_transaction("subject2", "predicate1", "object2", attester2)
       signature2 = sign(tx_hash2, private_key)
 
       assert {:ok, tx_id2} =
@@ -92,7 +98,7 @@ defmodule Kylix.BlockchainServerTest do
                  "subject2",
                  "predicate1",
                  "object2",
-                 "agent2",
+                 attester2,
                  signature2
                )
 
@@ -101,10 +107,8 @@ defmodule Kylix.BlockchainServerTest do
   end
 
   describe "query operations" do
-    test "query with exact match", %{private_key: private_key} do
-      # Add transaction
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction("Alice", "knows", "Bob", "agent1", timestamp)
+    test "query with exact match", %{private_key: private_key, attester: attester} do
+      tx_hash = hash_transaction("Alice", "knows", "Bob", attester)
       signature = sign(tx_hash, private_key)
 
       {:ok, _} =
@@ -112,7 +116,7 @@ defmodule Kylix.BlockchainServerTest do
           "Alice",
           "knows",
           "Bob",
-          "agent1",
+          attester,
           signature
         )
 
@@ -126,10 +130,12 @@ defmodule Kylix.BlockchainServerTest do
       assert data.object == "Bob"
     end
 
-    test "query with wildcard", %{private_key: private_key} do
-      # Add multiple transactions with different data
-      timestamp1 = DateTime.utc_now()
-      tx_hash1 = hash_transaction("Alice", "knows", "Bob", "agent1", timestamp1)
+    test "query with wildcard", %{
+      private_key: private_key,
+      attester: attester,
+      attester2: attester2
+    } do
+      tx_hash1 = hash_transaction("Alice", "knows", "Bob", attester)
       signature1 = sign(tx_hash1, private_key)
 
       {:ok, _} =
@@ -137,13 +143,11 @@ defmodule Kylix.BlockchainServerTest do
           "Alice",
           "knows",
           "Bob",
-          "agent1",
+          attester,
           signature1
         )
 
-      # Use a different transaction (Alice likes Coffee instead of knows Bob)
-      timestamp2 = DateTime.utc_now()
-      tx_hash2 = hash_transaction("Alice", "likes", "Coffee", "agent2", timestamp2)
+      tx_hash2 = hash_transaction("Alice", "likes", "Coffee", attester2)
       signature2 = sign(tx_hash2, private_key)
 
       {:ok, _} =
@@ -151,7 +155,7 @@ defmodule Kylix.BlockchainServerTest do
           "Alice",
           "likes",
           "Coffee",
-          "agent2",
+          attester2,
           signature2
         )
 
@@ -181,33 +185,32 @@ defmodule Kylix.BlockchainServerTest do
     end
 
     test "add_validator with valid existing validator" do
-      assert {:ok, "new_agent"} =
-               BlockchainServer.add_validator("new_agent", "pubkey123", "agent1")
+      on_exit(fn -> File.rm("config/validators/added_agent.pub") end)
 
-      # Check that the new validator is in the list
+      assert {:ok, "added_agent"} =
+               BlockchainServer.add_validator("added_agent", "pubkey123", "agent1")
+
       validators = BlockchainServer.get_validators()
-      assert "new_agent" in validators
+      assert "added_agent" in validators
     end
 
     test "add_validator with unknown validator" do
       assert {:error, :unknown_validator} =
-               BlockchainServer.add_validator("new_agent", "pubkey123", "unknown_agent")
+               BlockchainServer.add_validator("added_agent", "pubkey123", "unknown_agent")
     end
   end
 
   describe "network operations" do
-    test "receive_transaction processes valid transaction data",
-         %{private_key: private_key} do
-      # This is typically called by the ValidatorNetwork when it receives a transaction from the network
-      timestamp = DateTime.utc_now()
-
+    test "receive_transaction processes valid transaction data", %{
+      private_key: private_key,
+      attester: attester
+    } do
       tx_hash =
         hash_transaction(
           "NetworkSubject",
           "NetworkPredicate",
           "NetworkObject",
-          "agent1",
-          timestamp
+          attester
         )
 
       signature = sign(tx_hash, private_key)
@@ -216,7 +219,7 @@ defmodule Kylix.BlockchainServerTest do
         "subject" => "NetworkSubject",
         "predicate" => "NetworkPredicate",
         "object" => "NetworkObject",
-        "validator" => "agent1",
+        "validator" => attester,
         "signature" => signature
       }
 
@@ -235,10 +238,12 @@ defmodule Kylix.BlockchainServerTest do
   end
 
   describe "transaction ordering" do
-    test "transactions are linked in sequence", %{private_key: private_key} do
-      # Add transactions
-      timestamp1 = DateTime.utc_now()
-      tx_hash1 = hash_transaction("First", "predicate", "Object", "agent1", timestamp1)
+    test "transactions are linked in sequence", %{
+      private_key: private_key,
+      attester: attester,
+      attester2: attester2
+    } do
+      tx_hash1 = hash_transaction("First", "predicate", "Object", attester)
       signature1 = sign(tx_hash1, private_key)
 
       {:ok, tx_id1} =
@@ -246,12 +251,11 @@ defmodule Kylix.BlockchainServerTest do
           "First",
           "predicate",
           "Object",
-          "agent1",
+          attester,
           signature1
         )
 
-      timestamp2 = DateTime.utc_now()
-      tx_hash2 = hash_transaction("Second", "predicate", "Object", "agent2", timestamp2)
+      tx_hash2 = hash_transaction("Second", "predicate", "Object", attester2)
       signature2 = sign(tx_hash2, private_key)
 
       {:ok, tx_id2} =
@@ -259,7 +263,7 @@ defmodule Kylix.BlockchainServerTest do
           "Second",
           "predicate",
           "Object",
-          "agent2",
+          attester2,
           signature2
         )
 

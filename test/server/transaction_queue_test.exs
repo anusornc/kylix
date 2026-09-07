@@ -40,11 +40,8 @@ defmodule Kylix.Server.TransactionQueueTest do
     # Start the queue with fast processing for tests
     {:ok, queue_pid} = TransactionQueue.start_link(batch_size: 5, processing_interval: 50)
 
-    # Get test key pair for transaction signing
-    import Kylix.Auth.SignatureVerifier
-    {:ok, {public_key, private_key}} = Kylix.Auth.SignatureVerifier.generate_test_key_pair()
+    {public_key, private_key} = Kylix.Test.Attester.generate_keys()
 
-    # Return both process PIDs and keys for use in tests
     {:ok,
      %{
        server_pid: server_pid,
@@ -158,7 +155,8 @@ defmodule Kylix.Server.TransactionQueueTest do
     assert initial_state.transaction_statuses[ref].status == :pending
 
     # Call the callback directly to avoid Process.sleep and non-deterministic behavior
-    {:noreply, final_state} = TransactionQueue.handle_info({:transaction_result, ref, {:ok, "test_tx_id"}}, initial_state)
+    {:noreply, final_state} =
+      TransactionQueue.handle_info({:transaction_result, ref, {:ok, "test_tx_id"}}, initial_state)
 
     # Check final status in the returned state
     final_status = Map.get(final_state.transaction_statuses, ref)
@@ -175,18 +173,14 @@ defmodule Kylix.Server.TransactionQueueTest do
 
   # Test that transactions are processed asynchronously with real keys
   test "transactions are processed asynchronously", %{private_key: private_key} do
-    import Kylix.Auth.SignatureVerifier
-
-    # Add a few transactions and keep track of references
     refs =
       Enum.map(1..3, fn i ->
         subject = "subject#{i}"
         predicate = "predicate"
         object = "object#{i}"
 
-        timestamp = DateTime.utc_now()
-        tx_hash = hash_transaction(subject, predicate, object, "agent1", timestamp)
-        signature = sign(tx_hash, private_key)
+        signature =
+          Kylix.Test.Attester.signature(subject, predicate, object, "agent1", private_key)
 
         {:ok, ref} = TransactionQueue.submit(subject, predicate, object, "agent1", signature)
         ref

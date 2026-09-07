@@ -3,64 +3,143 @@ defmodule KylixTest do
   import Kylix.Auth.SignatureVerifier
 
   setup do
-    # Reset the application for proper test isolation
     :ok = Application.stop(:kylix)
     {:ok, _} = Application.ensure_all_started(:kylix)
 
-    # Clear the DAG tables completely (just like in kylix_integration_test)
     Kylix.Storage.DAGEngine.clear_all()
-
-    # Reset transaction count for a clean state
     :ok = Kylix.BlockchainServer.reset_tx_count(0)
 
-    # Get test key pair
-    {:ok, %{private_key: private_key, public_key: public_key}} = get_test_key_pair()
-    {:ok, private_key: private_key, public_key: public_key}
+    {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+    attester = Kylix.Test.Attester.seed("attester1", public_key)
+    attester2 = Kylix.Test.Attester.seed("attester2", public_key)
 
+    {:ok,
+     private_key: private_key, public_key: public_key, attester: attester, attester2: attester2}
+  end
+
+  describe "signed Transaction accept" do
+    test "accepts a correctly signed Transaction from a member Validator", %{
+      public_key: public_key,
+      private_key: private_key
+    } do
+      Kylix.Test.Attester.seed("member_attester", public_key)
+
+      subject = "subject-member"
+      predicate = "predicate"
+      object = "object"
+      tx_hash = hash_transaction(subject, predicate, object, "member_attester")
+      signature = sign(tx_hash, private_key)
+
+      assert {:ok, tx_id} =
+               Kylix.add_transaction(subject, predicate, object, "member_attester", signature)
+
+      assert String.starts_with?(tx_id, "tx")
+    end
+
+    test "signature still verifies after accept-time moves", %{
+      public_key: public_key,
+      private_key: private_key
+    } do
+      Kylix.Test.Attester.seed("clock_attester", public_key)
+
+      subject = "subject-clock"
+      predicate = "predicate"
+      object = "object"
+      tx_hash = hash_transaction(subject, predicate, object, "clock_attester")
+      signature = sign(tx_hash, private_key)
+
+      Process.sleep(10)
+
+      assert {:ok, _tx_id} =
+               Kylix.add_transaction(subject, predicate, object, "clock_attester", signature)
+    end
+
+    test "rejects a Transaction whose signature does not match the statement", %{
+      public_key: public_key,
+      private_key: private_key
+    } do
+      Kylix.Test.Attester.seed("bad_sig_attester", public_key)
+
+      subject = "subject-good"
+      predicate = "predicate"
+      object = "object"
+      other_hash = hash_transaction("subject-other", predicate, object, "bad_sig_attester")
+      bad_signature = sign(other_hash, private_key)
+
+      assert {:error, :invalid_signature} =
+               Kylix.add_transaction(
+                 subject,
+                 predicate,
+                 object,
+                 "bad_sig_attester",
+                 bad_signature
+               )
+    end
   end
 
   describe "add transaction with valid validator and signature" do
-    test "add transaction with valid validator and signature", %{private_key: private_key} do
-      # Create a unique subject to avoid duplicate transaction errors
+    test "add transaction with valid validator and signature", %{
+      private_key: private_key,
+      attester: attester
+    } do
       unique_subject = "subject-#{System.monotonic_time()}"
-
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction(unique_subject, "predicate", "object", "agent1", timestamp)
+      tx_hash = hash_transaction(unique_subject, "predicate", "object", attester)
       signature = sign(tx_hash, private_key)
 
-      assert {:ok, tx_id} = Kylix.add_transaction(unique_subject, "predicate", "object", "agent1", signature)
+      assert {:ok, tx_id} =
+               Kylix.add_transaction(unique_subject, "predicate", "object", attester, signature)
+
       assert String.starts_with?(tx_id, "tx")
     end
   end
 
   describe "add transaction asynchronously" do
-    test "add transaction asynchronously", %{private_key: private_key} do
+    test "add transaction asynchronously", %{private_key: private_key, attester: attester} do
       unique_subject = "subject-async-#{System.monotonic_time()}"
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction(unique_subject, "predicate", "object", "agent1", timestamp)
+      tx_hash = hash_transaction(unique_subject, "predicate", "object", attester)
       signature = sign(tx_hash, private_key)
 
-      assert {:ok, ref} = Kylix.add_transaction_async(unique_subject, "predicate", "object", "agent1", signature)
+      assert {:ok, ref} =
+               Kylix.add_transaction_async(
+                 unique_subject,
+                 "predicate",
+                 "object",
+                 attester,
+                 signature
+               )
+
       assert is_reference(ref)
     end
   end
 
   describe "add transaction with invalid validator" do
     test "add transaction with invalid validator", %{private_key: private_key} do
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction("subject", "predicate", "object", "unknown_agent", timestamp)
+      tx_hash = hash_transaction("subject", "predicate", "object", "unknown_agent")
       signature = sign(tx_hash, private_key)
-      assert {:error, :unknown_validator} = Kylix.add_transaction("subject", "predicate", "object", "unknown_agent", signature)
+
+      assert {:error, :unknown_validator} =
+               Kylix.add_transaction("subject", "predicate", "object", "unknown_agent", signature)
     end
   end
 
   describe "query transactions" do
-    test "query transactions", %{private_key: private_key} do
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction("subject1", "predicate1", "object1", "agent1", timestamp)
+    test "query transactions", %{
+      private_key: private_key,
+      attester: attester,
+      attester2: attester2
+    } do
+      tx_hash = hash_transaction("subject1", "predicate1", "object1", attester)
       signature = sign(tx_hash, private_key)
-      {:ok, _tx_id} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", signature)
-      {:ok, _tx_id} = Kylix.add_transaction("subject2", "predicate2", "object2", "agent2", signature)
+
+      {:ok, _tx_id} =
+        Kylix.add_transaction("subject1", "predicate1", "object1", attester, signature)
+
+      tx_hash = hash_transaction("subject2", "predicate2", "object2", attester2)
+      signature = sign(tx_hash, private_key)
+
+      {:ok, _tx_id} =
+        Kylix.add_transaction("subject2", "predicate2", "object2", attester2, signature)
+
       {:ok, results} = Kylix.query({"subject1", "predicate1", "object1"})
       assert length(results) == 1
     end
@@ -84,14 +163,23 @@ defmodule KylixTest do
   end
 
   describe "query transactions with validator rotation" do
-    test "query transactions with validator rotation", %{private_key: private_key} do
-      timestamp = DateTime.utc_now()
-      tx_hash = hash_transaction("subject1", "predicate1", "object1", "agent1", timestamp)
+    test "query transactions with validator rotation", %{
+      private_key: private_key,
+      attester: attester,
+      attester2: attester2
+    } do
+      tx_hash = hash_transaction("subject1", "predicate1", "object1", attester)
       signature = sign(tx_hash, private_key)
-      {:ok, _tx_id} = Kylix.add_transaction("subject1", "predicate1", "object1", "agent1", signature)
-      tx_hash = hash_transaction("subject2", "predicate2", "object2", "agent2", timestamp)
+
+      {:ok, _tx_id} =
+        Kylix.add_transaction("subject1", "predicate1", "object1", attester, signature)
+
+      tx_hash = hash_transaction("subject2", "predicate2", "object2", attester2)
       signature = sign(tx_hash, private_key)
-      {:ok, _tx_id} = Kylix.add_transaction("subject2", "predicate2", "object2", "agent2", signature)
+
+      {:ok, _tx_id} =
+        Kylix.add_transaction("subject2", "predicate2", "object2", attester2, signature)
+
       {:ok, results} = Kylix.query({nil, nil, nil})
       assert length(results) == 2
     end
@@ -108,6 +196,7 @@ defmodule KylixTest do
       metrics = Kylix.get_validator_metrics()
       assert is_map(metrics)
       validators = Kylix.get_validators()
+
       for validator <- validators do
         assert Map.has_key?(metrics, validator)
         assert is_map(metrics[validator])
@@ -122,9 +211,5 @@ defmodule KylixTest do
       assert Map.has_key?(status, :performance_metrics)
       assert is_list(status.validators)
     end
-  end
-
-  defp get_test_key_pair() do
-    GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
   end
 end

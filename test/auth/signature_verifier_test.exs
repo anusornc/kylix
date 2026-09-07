@@ -19,43 +19,38 @@ defmodule Kylix.Auth.SignatureVerifierTest do
     :ok
   end
 
-  describe "hash_transaction/5" do
+  describe "hash_transaction/4" do
     test "creates deterministic hashes for same input" do
-      # Arrange
       subject = "Alice"
       predicate = "knows"
       object = "Bob"
       validator_id = "validator1"
-      timestamp = DateTime.from_iso8601("2023-01-01T12:00:00Z") |> elem(1)
 
-      # Act
-      hash1 = SignatureVerifier.hash_transaction(subject, predicate, object, validator_id, timestamp)
-      hash2 = SignatureVerifier.hash_transaction(subject, predicate, object, validator_id, timestamp)
+      hash1 = SignatureVerifier.hash_transaction(subject, predicate, object, validator_id)
+      hash2 = SignatureVerifier.hash_transaction(subject, predicate, object, validator_id)
 
-      # Assert
       assert hash1 == hash2
       assert is_binary(hash1)
-      assert byte_size(hash1) == 32  # SHA-256 produces 32 bytes
+      assert byte_size(hash1) == 32
     end
 
     test "produces different hashes for different inputs" do
-      # Arrange
-      timestamp = DateTime.from_iso8601("2023-01-01T12:00:00Z") |> elem(1)
+      hash1 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator1")
+      hash2 = SignatureVerifier.hash_transaction("Bob", "knows", "Bob", "validator1")
+      hash3 = SignatureVerifier.hash_transaction("Alice", "likes", "Bob", "validator1")
+      hash4 = SignatureVerifier.hash_transaction("Alice", "knows", "Charlie", "validator1")
+      hash5 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator2")
 
-      # Generate different hashes by changing each parameter
-      hash1 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator1", timestamp)
-      hash2 = SignatureVerifier.hash_transaction("Bob", "knows", "Bob", "validator1", timestamp)
-      hash3 = SignatureVerifier.hash_transaction("Alice", "likes", "Bob", "validator1", timestamp)
-      hash4 = SignatureVerifier.hash_transaction("Alice", "knows", "Charlie", "validator1", timestamp)
-      hash5 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator2", timestamp)
-
-      different_timestamp = DateTime.from_iso8601("2023-01-01T12:00:01Z") |> elem(1)
-      hash6 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator1", different_timestamp)
-
-      # Assert all hashes are different
-      hashes = [hash1, hash2, hash3, hash4, hash5, hash6]
+      hashes = [hash1, hash2, hash3, hash4, hash5]
       unique_hashes = Enum.uniq(hashes)
       assert length(unique_hashes) == length(hashes)
+    end
+
+    test "does not change when accept-time would have moved" do
+      hash1 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator1")
+      Process.sleep(10)
+      hash2 = SignatureVerifier.hash_transaction("Alice", "knows", "Bob", "validator1")
+      assert hash1 == hash2
     end
   end
 
@@ -63,14 +58,27 @@ defmodule Kylix.Auth.SignatureVerifierTest do
     # Instead of trying to mock crypto, we'll test the function with known inputs
     # and expect specific outputs based on our understanding of the implementation
 
+    test "accepts a signature that matches the data and public key" do
+      {:ok, {public_key, private_key}} = SignatureVerifier.generate_test_key_pair()
+      data = "test transaction data"
+      signature = SignatureVerifier.sign(data, private_key)
+
+      assert :ok = SignatureVerifier.verify(data, signature, public_key)
+    end
+
+    test "rejects a signature over different data" do
+      {:ok, {public_key, private_key}} = SignatureVerifier.generate_test_key_pair()
+      signature = SignatureVerifier.sign("original", private_key)
+
+      assert {:error, :invalid_signature} =
+               SignatureVerifier.verify("altered", signature, public_key)
+    end
+
     test "verify function structure" do
-      # This test just ensures the basic structure of the function works
-      # without testing actual crypto operations
       data = "test data"
       signature = "dummy signature"
       public_key = "dummy key"
 
-      # We expect either :ok or an error tuple
       result = SignatureVerifier.verify(data, signature, public_key)
 
       assert result == :ok || match?({:error, _reason}, result)
@@ -80,8 +88,10 @@ defmodule Kylix.Auth.SignatureVerifierTest do
       # Use an approach that will definitely cause an exception in the verify function
       # We'll pass a malformed key that will cause an error
       data = "test data"
-      signature = <<1, 2, 3>>  # Binary that's not valid as a signature
-      public_key = <<4, 5, 6>> # Binary that's not a valid key
+      # Binary that's not valid as a signature
+      signature = <<1, 2, 3>>
+      # Binary that's not a valid key
+      public_key = <<4, 5, 6>>
 
       # This should cause an exception inside the crypto.verify function
       # but our function should catch it and return a friendly error

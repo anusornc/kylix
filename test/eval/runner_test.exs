@@ -8,16 +8,17 @@ defmodule Kylix.Eval.RunnerTest do
     Kylix.Storage.DAGEngine.clear_all()
     :ok = Kylix.BlockchainServer.reset_tx_count(0)
 
-    {:ok, %{private_key: private_key}} =
-      GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
+    {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+    attester = Kylix.Test.Attester.seed("fig1_attester", public_key)
 
-    {:ok, private_key: private_key}
+    {:ok, private_key: private_key, attester: attester}
   end
 
   test "loads Fig1, executes lineage queries, and diffs expected JSON", %{
-    private_key: private_key
+    private_key: private_key,
+    attester: attester
   } do
-    {result, _output} = run_eval(private_key)
+    {result, _output} = run_eval(attester, private_key)
     assert {:ok, rows} = result
 
     assert Enum.map(rows, & &1.name) == [
@@ -34,9 +35,10 @@ defmodule Kylix.Eval.RunnerTest do
   end
 
   test "emits the paper correctness table with Fabric on-chain not answerable", %{
-    private_key: private_key
+    private_key: private_key,
+    attester: attester
   } do
-    {result, output} = run_eval(private_key)
+    {result, output} = run_eval(attester, private_key)
     assert {:ok, _rows} = result
 
     assert output =~ "Kylix"
@@ -53,14 +55,14 @@ defmodule Kylix.Eval.RunnerTest do
     refute output =~ ~r/\bTPS\b/
   end
 
-  defp run_eval(private_key) do
+  defp run_eval(attester, private_key) do
     parent = self()
 
     output =
       capture_io(fn ->
         send(
           parent,
-          {:run, Kylix.Eval.Runner.run(validator_id: "agent1", private_key: private_key)}
+          {:run, Kylix.Eval.Runner.run(validator_id: attester, private_key: private_key)}
         )
       end)
 

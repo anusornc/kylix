@@ -18,9 +18,7 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     # Reset the application
     {:ok, _} = Application.ensure_all_started(:kylix)
 
-    # Get test key pair with fallback to generating a new one
-    {:ok, %{private_key: private_key, public_key: _public_key}} =
-      get_test_key_pair_with_fallback()
+    {attester, private_key} = own_attester()
 
     # Set up test data
     subject_base = "entity:test"
@@ -38,12 +36,8 @@ defmodule Kylix.Benchmark.TransactionSpeed do
         subject = "#{subject_base}#{i}"
         object = "#{object_base}#{i}"
 
-        # Get a fresh validator for each transaction
-        validator = Kylix.Consensus.ValidatorCoordinator.get_current_validator()
-
-        # Generate proper signature for each transaction
-        timestamp = DateTime.utc_now()
-        tx_hash = hash_transaction(subject, predicate, object, validator, timestamp)
+        validator = attester
+        tx_hash = hash_transaction(subject, predicate, object, validator)
         signature = sign(tx_hash, private_key)
 
         # Log before adding the transaction
@@ -136,9 +130,7 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     Kylix.Server.TransactionQueue.set_processing_rate(batch_size, processing_interval)
     Kylix.Server.TransactionQueue.clear()
 
-    # Get test key pair with fallback to generating a new one
-    {:ok, %{private_key: private_key, public_key: _public_key}} =
-      get_test_key_pair_with_fallback()
+    {attester, private_key} = own_attester()
 
     # Set up test data
     subject_base = "entity:async_test"
@@ -156,14 +148,8 @@ defmodule Kylix.Benchmark.TransactionSpeed do
         subject = "#{subject_base}#{i}"
         object = "#{object_base}#{i}"
 
-        # Get a fresh validator for each transaction
-        # The transaction queue will handle rotation internally, but this ensures
-        # we're using a valid validator from the start
-        validator = Kylix.Consensus.ValidatorCoordinator.get_current_validator()
-
-        # Generate proper signature for each transaction
-        timestamp = DateTime.utc_now()
-        tx_hash = hash_transaction(subject, predicate, object, validator, timestamp)
+        validator = attester
+        tx_hash = hash_transaction(subject, predicate, object, validator)
         signature = sign(tx_hash, private_key)
 
         # Measure submission time only - actual processing happens asynchronously
@@ -320,24 +306,17 @@ defmodule Kylix.Benchmark.TransactionSpeed do
     end)
   end
 
-  # Helper function to get test key pair with fallback
-  defp get_test_key_pair_with_fallback() do
-    case get_test_key_pair() do
-      {:ok, %{private_key: private_key, public_key: public_key}} when not is_nil(private_key) ->
-        # Valid key pair from the server
-        {:ok, %{private_key: private_key, public_key: public_key}}
+  defp own_attester do
+    {:ok, {public_key, private_key}} = Kylix.Auth.SignatureVerifier.generate_test_key_pair()
 
-      _ ->
-        # No valid key pair, generate a temporary one
-        IO.puts("No valid test key pair available, generating a temporary one...")
-        {:ok, {public_key, private_key}} = Kylix.Auth.SignatureVerifier.generate_test_key_pair()
-        {:ok, %{private_key: private_key, public_key: public_key}}
-    end
-  end
+    known_by =
+      case Kylix.get_validators() do
+        [validator | _] -> validator
+        [] -> "agent1"
+      end
 
-  # Helper function to get test key pair from the blockchain server
-  defp get_test_key_pair() do
-    GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
+    {:ok, attester} = Kylix.add_validator("bench_attester", public_key, known_by)
+    {attester, private_key}
   end
 
   # Helper functions

@@ -9,10 +9,10 @@ defmodule Kylix.Eval.Fig1LineageSuiteTest do
     Kylix.Storage.DAGEngine.clear_all()
     :ok = Kylix.BlockchainServer.reset_tx_count(0)
 
-    {:ok, %{private_key: private_key}} =
-      GenServer.call(Kylix.BlockchainServer, :get_test_key_pair)
+    {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+    attester = Kylix.Test.Attester.seed("fig1_attester", public_key)
 
-    assert {:ok, 15} = Kylix.Eval.Fig1.record(validator_id: "agent1", private_key: private_key)
+    assert {:ok, 15} = Kylix.Eval.Fig1.record(validator_id: attester, private_key: private_key)
     :ok
   end
 
