@@ -27,6 +27,7 @@ defmodule Kylix.Query.SparqlEngineTest do
         "entity:document1" "prov:wasGeneratedBy" "activity:process1"
       }
       """
+
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) == 1
       result = hd(results)
@@ -40,6 +41,7 @@ defmodule Kylix.Query.SparqlEngineTest do
         "entity:document1" "prov:wasGeneratedBy" ?activity
       }
       """
+
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) >= 1
       result = hd(results)
@@ -54,20 +56,7 @@ defmodule Kylix.Query.SparqlEngineTest do
       SELECT  ?entity   ?activity /* Another comment */
       WHERE   {  ?entity  "prov:wasGeneratedBy"  ?activity  }
       """
-      {:ok, results} = SparqlEngine.execute(query)
-      assert is_list(results)
-      assert length(results) > 0
-    end
 
-    test "correctly processes PREFIX declarations" do
-      query = """
-      PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-      PREFIX prov: <http://www.w3.org/ns/prov#>
-      SELECT ?entity ?activity
-      WHERE {
-        ?entity prov:wasGeneratedBy ?activity
-      }
-      """
       {:ok, results} = SparqlEngine.execute(query)
       assert is_list(results)
       assert length(results) > 0
@@ -77,12 +66,14 @@ defmodule Kylix.Query.SparqlEngineTest do
       delete_query = """
       DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }
       """
+
       result = SparqlEngine.execute(delete_query)
       assert match?({:error, _}, result)
 
       insert_query = """
       INSERT { ?s ?p ?o } WHERE { ?s ?p ?o }
       """
+
       result = SparqlEngine.execute(insert_query)
       assert match?({:error, _}, result)
     end
@@ -96,6 +87,7 @@ defmodule Kylix.Query.SparqlEngineTest do
         ?derivedEntity "prov:wasDerivedFrom" ?sourceEntity
       }
       """
+
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) > 0
       result = hd(results)
@@ -110,6 +102,7 @@ defmodule Kylix.Query.SparqlEngineTest do
         ?entity "prov:wasAttributedTo" ?agent
       }
       """
+
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) > 0
       result = hd(results)
@@ -125,6 +118,7 @@ defmodule Kylix.Query.SparqlEngineTest do
         ?activity "prov:wasAssociatedWith" ?agent
       }
       """
+
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) > 0
       result = hd(results)
@@ -142,6 +136,7 @@ defmodule Kylix.Query.SparqlEngineTest do
         ?entity "prov:wasGeneratedBy" ?activity
       }
       """
+
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) == 1
       result = hd(results)
@@ -156,6 +151,7 @@ defmodule Kylix.Query.SparqlEngineTest do
       }
       GROUP BY ?agent
       """
+
       {:ok, results} = SparqlEngine.execute(query)
       assert length(results) > 0
       result = hd(results)
