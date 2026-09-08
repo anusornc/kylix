@@ -80,35 +80,17 @@ defmodule Kylix.API.Router do
   get "/metrics" do
     Logger.info("Fetching performance metrics")
 
-    # Get cache metrics from the Coordinator
-    cache_metrics = Kylix.Storage.Coordinator.get_cache_metrics()
-
-    # Get basic system metrics
     {:ok, results} = Kylix.Storage.Coordinator.query({nil, nil, nil})
     node_count = length(results)
 
-    # Count all edges
     edge_count =
       Enum.reduce(results, 0, fn {_, _, edges}, acc ->
         acc + length(edges)
       end)
 
-    # Load transaction speed benchmark results from file
     benchmark_data = load_benchmark_data()
 
-    # Combine all metrics
     metrics = %{
-      cache: %{
-        hits: cache_metrics.cache_hits,
-        misses: cache_metrics.cache_misses,
-        size: cache_metrics.cache_size,
-        hit_rate: cache_metrics.hit_rate_percent
-      },
-      query: %{
-        # Convert to milliseconds
-        avg_time: cache_metrics.avg_query_time_microseconds / 1000,
-        total_queries: cache_metrics.cache_hits + cache_metrics.cache_misses
-      },
       storage: %{
         node_count: node_count,
         edge_count: edge_count

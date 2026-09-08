@@ -7,8 +7,6 @@ defmodule Kylix.Application do
     setup_environment(config.db_path)
     validators = load_validators(config.validators_dir)
 
-    Kylix.Storage.Coordinator.init_cache()
-
     opts = [strategy: :rest_for_one, name: Kylix.Supervisor]
     Supervisor.start_link(children(config, validators), opts)
   end
@@ -49,7 +47,6 @@ defmodule Kylix.Application do
       {Kylix.BlockchainServer, [validators: validators, config_dir: config.validators_dir]},
       {Kylix.Network.ValidatorNetwork, [port: config.port, node_id: config.node_id]},
       {Kylix.Server.TransactionQueue, []},
-      {Kylix.Storage.CacheSyncJob, []},
       if Mix.env() != :test do
         {Kylix.API.Server, [port: config.api_port]}
       end

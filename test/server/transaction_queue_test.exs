@@ -27,18 +27,13 @@ defmodule Kylix.Server.TransactionQueueTest do
     # Reset transaction count
     :ok = Kylix.BlockchainServer.reset_tx_count(0)
 
-    # Stop any existing TransactionQueue
-    if Process.whereis(TransactionQueue) do
-      try do
-        GenServer.stop(TransactionQueue)
-      catch
-        # Ignore errors if process is already gone
-        _kind, _reason -> :ok
-      end
+    queue_pid = Process.whereis(TransactionQueue)
+
+    unless queue_pid do
+      flunk("TransactionQueue not running - required for this test")
     end
 
-    # Start the queue with fast processing for tests
-    {:ok, queue_pid} = TransactionQueue.start_link(batch_size: 5, processing_interval: 50)
+    :ok = TransactionQueue.set_processing_rate(5, 50)
 
     {public_key, private_key} = Kylix.Test.Attester.generate_keys()
 

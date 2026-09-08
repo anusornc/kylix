@@ -252,27 +252,11 @@ defmodule Kylix.API.RouterTest do
 
   describe "GET /metrics" do
     test "returns formatted system metrics" do
-      # Mock cache metrics
-      mock_cache = %{
-        cache_hits: 1,
-        cache_misses: 0,
-        cache_size: 10,
-        hit_rate_percent: 100,
-        avg_query_time_microseconds: 100
-      }
-
-      :meck.expect(Kylix.Storage.Coordinator, :get_cache_metrics, fn -> mock_cache end)
-
-      # Mock nodes/edges query
-      # format: {node_id, data, edges}
       mock_results = [{"node1", %{subject: "a", predicate: "b", object: "c"}, [{1, 2, "label"}]}]
 
       :meck.expect(Kylix.Storage.Coordinator, :query, fn {nil, nil, nil} ->
         {:ok, mock_results}
       end)
-
-      # NOTE: For benchmark data, load_benchmark_data/0 checks if "data/benchmark" exists,
-      # since it doesn't in test, it defaults to %{results: [], latest: nil} gracefully.
 
       conn = conn(:get, "/metrics")
       conn = Router.call(conn, @opts)
@@ -284,18 +268,9 @@ defmodule Kylix.API.RouterTest do
       assert response["status"] == "success"
 
       metrics = response["data"]
-      assert metrics["cache"]["hits"] == 1
-      assert metrics["cache"]["misses"] == 0
-      assert metrics["cache"]["size"] == 10
-      assert metrics["cache"]["hit_rate"] == 100
-
-      assert metrics["query"]["avg_time"] == 100 / 1000
-      assert metrics["query"]["total_queries"] == 1
-
       assert metrics["storage"]["node_count"] == 1
       assert metrics["storage"]["edge_count"] == 1
 
-      # Default empty map due to missing folder
       assert metrics["benchmarks"]["results"] == []
       assert metrics["benchmarks"]["latest"] == nil
     end
