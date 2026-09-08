@@ -22,8 +22,9 @@ defmodule Kylix.Application do
   end
 
   defp setup_environment(db_path) do
-    unless Mix.env() == :test do
-      File.mkdir_p!(db_path)
+    case Kylix.Storage.Coordinator.adapter_module() do
+      Kylix.Storage.PersistentDAGEngine -> File.mkdir_p!(db_path)
+      _ -> :ok
     end
   end
 
@@ -40,10 +41,7 @@ defmodule Kylix.Application do
 
   defp children(config, validators) do
     [
-      {Kylix.Storage.DAGEngine, []},
-      if Mix.env() != :test do
-        {Kylix.Storage.PersistentDAGEngine, [db_path: config.db_path]}
-      end,
+      persist_child(config),
       {Kylix.BlockchainServer, [validators: validators, config_dir: config.validators_dir]},
       {Kylix.Network.ValidatorNetwork, [port: config.port, node_id: config.node_id]},
       {Kylix.Server.TransactionQueue, []},
@@ -52,5 +50,14 @@ defmodule Kylix.Application do
       end
     ]
     |> Enum.filter(&(&1 != nil))
+  end
+
+  defp persist_child(config) do
+    module = Kylix.Storage.Coordinator.adapter_module()
+
+    case module do
+      Kylix.Storage.PersistentDAGEngine -> {module, [db_path: config.db_path]}
+      _ -> {module, []}
+    end
   end
 end

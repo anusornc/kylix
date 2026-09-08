@@ -2,6 +2,7 @@
 import Config
 
 config :kylix,
+  persist_adapter: :memory,
   db_path: "data/test/dag_storage",
   port: 4050,  # Different port for tests
   node_id: "kylix-test-node",
