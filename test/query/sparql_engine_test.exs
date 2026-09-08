@@ -160,27 +160,6 @@ defmodule Kylix.Query.SparqlEngineTest do
     end
   end
 
-  describe "New API functions" do
-    test "explain function provides query analysis" do
-      query = "SELECT ?entity ?activity WHERE { ?entity \"prov:wasGeneratedBy\" ?activity }"
-      {:ok, explanation} = SparqlEngine.explain(query)
-      assert Map.has_key?(explanation, :original_query)
-      assert Map.has_key?(explanation, :preprocessed_query)
-      assert Map.has_key?(explanation, :parsed_structure)
-      assert Map.has_key?(explanation, :optimized_structure)
-    end
-
-    test "example_queries returns a list of example queries" do
-      examples = SparqlEngine.example_queries()
-      assert is_list(examples)
-      assert length(examples) > 0
-      example = hd(examples)
-      assert Map.has_key?(example, :name)
-      assert Map.has_key?(example, :description)
-      assert Map.has_key?(example, :query)
-    end
-  end
-
   defp setup_provo_test_data do
     if function_exported?(DAGEngine, :clear_all, 0) do
       DAGEngine.clear_all()

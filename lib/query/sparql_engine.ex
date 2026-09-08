@@ -76,7 +76,7 @@ defmodule Kylix.Query.SparqlEngine do
       ])
     )
 
-  defparsec(:parse_query_structure, query_structure_validator)
+  defparsecp(:parse_query_structure, query_structure_validator)
 
   query_preprocessor =
     repeat(
@@ -100,7 +100,7 @@ defmodule Kylix.Query.SparqlEngine do
       ])
     )
 
-  defparsec(:preprocess_query, query_preprocessor)
+  defparsecp(:preprocess_query, query_preprocessor)
 
   def execute(query) do
     try do
@@ -180,18 +180,6 @@ defmodule Kylix.Query.SparqlEngine do
     end
   end
 
-  def query_pattern({s, p, o}) do
-    s_str = if is_nil(s), do: "?s", else: "\"#{s}\""
-    p_str = if is_nil(p), do: "?p", else: "\"#{p}\""
-    o_str = if is_nil(o), do: "?o", else: "\"#{o}\""
-    query = "SELECT ?s ?p ?o WHERE { #{s_str} #{p_str} #{o_str} }"
-
-    case execute(query) do
-      {:ok, results} -> {:ok, format_to_legacy_results(results, s, p, o)}
-      error -> error
-    end
-  end
-
   defp ensure_utf8_encoding(input) when is_binary(input) do
     case :unicode.characters_to_binary(input, :utf8, :utf8) do
       converted when is_binary(converted) ->
@@ -265,7 +253,7 @@ defmodule Kylix.Query.SparqlEngine do
     end
   end
 
-  def validate_sparql_query(query) do
+  defp validate_sparql_query(query) do
     cond do
       String.contains?(query, "DELETE") ->
         {:error, "DELETE operations are not allowed"}
@@ -293,119 +281,5 @@ defmodule Kylix.Query.SparqlEngine do
            "Query must start with SELECT, CONSTRUCT, DESCRIBE, or ASK (optionally preceded by PREFIX or BASE)"}
         end
     end
-  end
-
-  defp format_to_legacy_results(results, orig_s, orig_p, orig_o) do
-    Enum.map(results, fn result_map ->
-      node_id = Map.get(result_map, "node_id", "tx_#{:erlang.unique_integer([:positive])}")
-      s = if is_binary(orig_s), do: orig_s, else: Map.get(result_map, "s")
-      p = if is_binary(orig_p), do: orig_p, else: Map.get(result_map, "p")
-      o = if is_binary(orig_o), do: orig_o, else: Map.get(result_map, "o")
-
-      data = %{
-        subject: s,
-        predicate: p,
-        object: o,
-        validator: Map.get(result_map, "validator", "agent1"),
-        timestamp: Map.get(result_map, "timestamp", DateTime.utc_now())
-      }
-
-      edges = Map.get(result_map, "edges", [])
-      {node_id, data, edges}
-    end)
-  end
-
-  def explain(query) do
-    try do
-      Logger.debug("Explain - Input to ensure_utf8_encoding: #{inspect(query)}")
-      cleaned_query = ensure_utf8_encoding(query)
-      Logger.debug("Explain - Output from ensure_utf8_encoding: #{inspect(cleaned_query)}")
-
-      case preprocess_sparql_query(cleaned_query) do
-        {:ok, preprocessed_query, prefixes} ->
-          Logger.debug("Explain - Preprocessed query: #{inspect(preprocessed_query)}")
-
-          case SparqlParser.parse(preprocessed_query) do
-            {:ok, parsed_query} ->
-              optimized_query =
-                case SparqlOptimizer.optimize(parsed_query) do
-                  {:ok, optimized} -> optimized
-                  {:error, _} -> parsed_query
-                end
-
-              execution_plan =
-                if function_exported?(SparqlOptimizer, :create_execution_plan, 1) do
-                  SparqlOptimizer.create_execution_plan(optimized_query)
-                else
-                  %{note: "Execution plan generation not available"}
-                end
-
-              explanation = %{
-                original_query: query,
-                preprocessed_query: preprocessed_query,
-                prefixes: prefixes,
-                parsed_structure: parsed_query,
-                optimized_structure: optimized_query,
-                execution_plan: execution_plan
-              }
-
-              {:ok, explanation}
-
-            {:error, reason} ->
-              Logger.error("Explain - Parse error: #{reason}")
-              {:error, "Query parsing failed: #{reason}"}
-          end
-
-        {:error, reason} ->
-          Logger.error("Explain - Preprocessing failed: #{reason}")
-          {:error, "Query preprocessing failed: #{reason}"}
-      end
-    rescue
-      e ->
-        Logger.error("Explain - Exception: #{Exception.message(e)}")
-        {:error, "Error explaining query: #{Exception.message(e)}"}
-    end
-  end
-
-  def example_queries do
-    [
-      %{
-        name: "Basic triple pattern",
-        description: "Simple query to match all triples",
-        query: "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10"
-      },
-      %{
-        name: "Filter by subject",
-        description: "Find all relationships for a specific entity",
-        query: "SELECT ?p ?o WHERE { \"http://example.org/entity/UHTMilkBatch1\" ?p ?o }"
-      },
-      %{
-        name: "Count results",
-        description: "Count the number of triples matching a pattern",
-        query: "SELECT (COUNT(?s) AS ?count) WHERE { ?s ?p ?o }"
-      },
-      %{
-        name: "Group by predicate",
-        description: "Count triples grouped by their predicates",
-        query:
-          "SELECT ?p (COUNT(?s) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p ORDER BY DESC(?count)"
-      },
-      %{
-        name: "PROV-O entity generation",
-        description: "Find entities and their generating activities",
-        query: "SELECT ?entity ?activity WHERE { ?entity \"prov:wasGeneratedBy\" ?activity }"
-      },
-      %{
-        name: "Optional metadata",
-        description: "Main data with optional metadata if available",
-        query: """
-        SELECT ?s ?p ?o ?metadata
-        WHERE {
-          ?s ?p ?o .
-          OPTIONAL { ?s "metadata" ?metadata }
-        }
-        """
-      }
-    ]
   end
 end

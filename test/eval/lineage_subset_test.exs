@@ -69,6 +69,17 @@ defmodule Kylix.Eval.LineageSubsetTest do
     assert results == expected
   end
 
+  test "only execute/1 is public" do
+    assert Code.ensure_loaded?(SparqlEngine)
+    assert function_exported?(SparqlEngine, :execute, 1)
+    refute function_exported?(SparqlEngine, :explain, 1)
+    refute function_exported?(SparqlEngine, :example_queries, 0)
+    refute function_exported?(SparqlEngine, :query_pattern, 1)
+    refute function_exported?(SparqlEngine, :validate_sparql_query, 1)
+    refute function_exported?(SparqlEngine, :parse_query_structure, 1)
+    refute function_exported?(SparqlEngine, :preprocess_query, 1)
+  end
+
   defp assert_rejected(query) do
     assert {:error, reason} = SparqlEngine.execute(query)
     assert reason =~ "not in the lineage suite"
