@@ -80,6 +80,14 @@ defmodule Kylix.Eval.LineageSubsetTest do
     refute function_exported?(SparqlEngine, :preprocess_query, 1)
   end
 
+  test "hop modules are not part of the lineage suite" do
+    refute Code.ensure_loaded?(Kylix.Query.SparqlParser)
+    refute Code.ensure_loaded?(Kylix.Query.SparqlOptimizer)
+    refute Code.ensure_loaded?(Kylix.Query.SparqlExecutor)
+    refute Code.ensure_loaded?(Kylix.Query.SparqlAggregator)
+    refute Code.ensure_loaded?(Kylix.Query.VariableMapper)
+  end
+
   defp assert_rejected(query) do
     assert {:error, reason} = SparqlEngine.execute(query)
     assert reason =~ "not in the lineage suite"

@@ -1,14 +1,13 @@
 defmodule Kylix.Query.SparqlEngine do
   @moduledoc """
-  Provides SPARQL query capabilities for the blockchain data.
+  Lineage suite: ask provenance questions at execute/1.
   """
 
   import NimbleParsec
   require Logger
 
-  alias Kylix.Query.SparqlParser
-  alias Kylix.Query.SparqlExecutor
-  alias Kylix.Query.SparqlOptimizer
+  alias Kylix.Query.SparqlEngine.Parse
+  alias Kylix.Query.SparqlEngine.Join
 
   # --- NimbleParsec Parser Definitions ---
 
@@ -130,20 +129,11 @@ defmodule Kylix.Query.SparqlEngine do
           :ok ->
             Logger.debug("Parsing SPARQL query: #{preprocessed_query}")
 
-            case SparqlParser.parse(preprocessed_query) do
+            case Parse.parse(preprocessed_query) do
               {:ok, parsed_query} ->
                 parsed_query = Map.put(parsed_query, :prefixes, prefixes)
                 Logger.debug("Parsed query structure: #{inspect(parsed_query)}")
-
-                optimized_query =
-                  case SparqlOptimizer.optimize(parsed_query) do
-                    {:ok, optimized} -> optimized
-                    {:error, _} -> parsed_query
-                  end
-
-                Logger.debug("Optimized query structure: #{inspect(optimized_query)}")
-                result = SparqlExecutor.execute(optimized_query)
-                Logger.debug("Executor raw result: #{inspect(result)}")
+                result = Join.execute(parsed_query)
                 Logger.debug("Query execution result: #{inspect(result)}")
                 result
 

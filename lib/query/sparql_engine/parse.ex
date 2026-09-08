@@ -1,7 +1,5 @@
-defmodule Kylix.Query.SparqlParser do
-  @moduledoc """
-  SPARQL Parser for Kylix blockchain queries using NimbleParsec.
-  """
+defmodule Kylix.Query.SparqlEngine.Parse do
+  @moduledoc false
 
   import NimbleParsec
   require Logger
@@ -176,7 +174,12 @@ defmodule Kylix.Query.SparqlParser do
       ])
       |> ignore(optional_whitespace)
     )
-    |> lookahead_not(string("GROUP BY") |> string("ORDER BY") |> string("LIMIT") |> string("OFFSET"))
+    |> lookahead_not(
+      string("GROUP BY")
+      |> string("ORDER BY")
+      |> string("LIMIT")
+      |> string("OFFSET")
+    )
     |> tag(:patterns)
 
   defcombinatorp(:inner_patterns_list, inner_patterns_list)
@@ -315,16 +318,18 @@ defmodule Kylix.Query.SparqlParser do
     |> optional(concat(offset_clause, ignore(optional_whitespace)))
     |> eos()
 
-  defparsec(:parse_query, sparql_query)
+  defparsecp(:parse_query, sparql_query)
 
   @doc """
   Parses a SPARQL query string into a structured query representation.
   """
   def parse(query) do
     Logger.debug("Raw query input to parser: #{inspect(query)}")
+
     try do
       normalized_query = normalize_query(query)
       Logger.debug("Parsing query: #{normalized_query}")
+
       case parse_query(normalized_query) do
         {:ok, parsed, "", _, _, _} ->
           Logger.debug("Parsed: #{inspect(parsed)}")

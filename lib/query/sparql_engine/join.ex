@@ -1,106 +1,9 @@
-defmodule Kylix.Query.SparqlExecutor do
-  @moduledoc """
-  Executes parsed SPARQL queries against the Kylix blockchain storage.
-  """
+defmodule Kylix.Query.SparqlEngine.Join do
+  @moduledoc false
 
-  import NimbleParsec
-  alias Kylix.Query.SparqlAggregator
+  alias Kylix.Query.SparqlEngine.Count
+  alias Kylix.Query.SparqlEngine.Roles
   require Logger
-
-  _whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 1)
-  optional_whitespace = ascii_string([?\s, ?\t, ?\n, ?\r], min: 0)
-
-  variable = ascii_string([?a..?z, ?A..?Z, ?0..?9, ?_], min: 1) |> unwrap_and_tag(:variable)
-
-  operator =
-    ignore(optional_whitespace)
-    |> choice([
-      string("=") |> replace(:eq),
-      string("!=") |> replace(:ne),
-      string(">") |> replace(:gt),
-      string("<") |> replace(:lt),
-      string(">=") |> replace(:ge),
-      string("<=") |> replace(:le),
-      string("&&") |> replace(:and),
-      string("||") |> replace(:or)
-    ])
-    |> unwrap_and_tag(:operator)
-    |> ignore(optional_whitespace)
-
-  string_literal =
-    ignore(ascii_char([?"]))
-    |> repeat(
-      choice([
-        string(~S(\")) |> replace(?"),
-        string(~S(\\)) |> replace(?\\),
-        ascii_string([not: ?", not: ?\\], min: 1)
-      ])
-    )
-    |> reduce({List, :to_string, []})
-    |> ignore(ascii_char([?"]))
-    |> unwrap_and_tag(:string)
-
-  number =
-    choice([
-      integer(min: 1) |> unwrap_and_tag(:integer),
-      ascii_string([?0..?9], min: 1)
-      |> ignore(ascii_char([?.]))
-      |> concat(ascii_string([?0..?9], min: 1))
-      |> reduce({Enum, :join, ["."]})
-      |> map({String, :to_float, []})
-      |> unwrap_and_tag(:float)
-    ])
-
-  boolean =
-    choice([string("true") |> replace(true), string("false") |> replace(false)])
-    |> unwrap_and_tag(:boolean)
-
-  literal_value = choice([string_literal, number, boolean])
-
-  filter_expr = variable |> concat(operator) |> concat(literal_value)
-
-  defparsec(:parse_filter_expression, filter_expr)
-
-  def parse_filter(filter_string) do
-    case parse_filter_expression(filter_string) do
-      {:ok, parsed, "", _, _, _} -> {:ok, parsed}
-      {:ok, parsed, rest, _, _, _} ->
-        Logger.debug("Parsed filter partially: #{inspect(parsed)}, remaining: #{rest}")
-        {:error, "Failed to parse entire filter: #{rest}"}
-      {:error, reason, rest, _, _, _} ->
-        Logger.error("Filter parse error: #{reason} at: #{rest}")
-        {:error, "Error parsing filter: #{reason} at: #{rest}"}
-    end
-  end
-
-  def construct_filter(parsed) do
-    var = Keyword.get(parsed, :variable)
-    op = Keyword.get(parsed, :operator)
-    value =
-      cond do
-        Keyword.has_key?(parsed, :string) -> Keyword.get(parsed, :string)
-        Keyword.has_key?(parsed, :integer) -> Keyword.get(parsed, :integer)
-        Keyword.has_key?(parsed, :float) -> Keyword.get(parsed, :float)
-        Keyword.has_key?(parsed, :boolean) -> Keyword.get(parsed, :boolean)
-        true -> nil
-      end
-    filter_type =
-      case op do
-        :eq -> :equality
-        :ne -> :inequality
-        :gt -> :greater_than
-        :lt -> :less_than
-        :ge -> :greater_than_equal
-        :le -> :less_than_equal
-        _ -> :unknown
-      end
-    %{
-      type: filter_type,
-      variable: var,
-      value: value,
-      expression: "#{var} #{op} #{inspect(value)}"
-    }
-  end
 
   def execute(query_structure) do
     try do
@@ -130,6 +33,7 @@ defmodule Kylix.Query.SparqlExecutor do
       variables: Enum.map(query_structure[:select] || [], fn {:variable, v} -> v end),
       variable_positions: %{}
     }
+
     Map.merge(defaults, query_structure)
   end
 
@@ -137,12 +41,14 @@ defmodule Kylix.Query.SparqlExecutor do
     with {:ok, base_results} <- execute_base_patterns(query_structure.patterns),
          {:ok, with_unions} <- add_union_results(base_results, query_structure.unions),
          {:ok, filtered1} <- apply_filters(with_unions, query_structure.filters),
-         {:ok, filtered} <- apply_pattern_filters(filtered1, query_structure.pattern_filters || []),
+         {:ok, filtered} <-
+           apply_pattern_filters(filtered1, query_structure.pattern_filters || []),
          {:ok, with_optionals} <- process_optionals(filtered, query_structure.optionals),
          {:ok, aggregated} <- apply_aggregations(with_optionals, query_structure),
          {:ok, ordered} <- apply_ordering(aggregated, query_structure.order_by),
          {:ok, limited} <- apply_limits(ordered, query_structure.limit, query_structure.offset),
-         {:ok, projected} <- project_variables(limited, query_structure.variables, query_structure) do
+         {:ok, projected} <-
+           project_variables(limited, query_structure.variables, query_structure) do
       Logger.debug("Final results: #{inspect(projected)}")
       {:ok, projected}
     else
@@ -172,15 +78,22 @@ defmodule Kylix.Query.SparqlExecutor do
           Enum.reduce(patterns, [%{}], fn pattern, current_solutions ->
             try do
               if !is_map(pattern) do
-                Logger.warning("SparqlExecutor: (reduce) non-map pattern: #{inspect(pattern)}. Skipping.")
-                current_solutions 
+                Logger.warning(
+                  "SparqlExecutor: (reduce) non-map pattern: #{inspect(pattern)}. Skipping."
+                )
+
+                current_solutions
               else
                 Enum.flat_map(current_solutions, fn solution ->
                   if !is_map(solution) do
-                    Logger.warning("SparqlExecutor: (flat_map) non-map solution: #{inspect(solution)}. Skipping path.")
-                    [] 
+                    Logger.warning(
+                      "SparqlExecutor: (flat_map) non-map solution: #{inspect(solution)}. Skipping path."
+                    )
+
+                    []
                   else
                     pattern_results = execute_pattern(pattern, solution)
+
                     Enum.map(pattern_results, fn pattern_binding ->
                       merge_bindings(solution, pattern_binding, pattern)
                     end)
@@ -190,10 +103,15 @@ defmodule Kylix.Query.SparqlExecutor do
               end
             rescue
               e in [BadMapError] ->
-                Logger.error("SparqlExecutor: Rescued BadMapError in execute_base_patterns' reduce loop. Error: #{inspect(e)}, Pattern: #{inspect(pattern)}, CurrentSolutions: #{inspect(current_solutions)}. Stacktrace: #{inspect(__STACKTRACE__)}. Continuing with current solutions.")
-                current_solutions # Continue with solutions from before this problematic pattern
+                Logger.error(
+                  "SparqlExecutor: Rescued BadMapError in execute_base_patterns' reduce loop. Error: #{inspect(e)}, Pattern: #{inspect(pattern)}, CurrentSolutions: #{inspect(current_solutions)}. Stacktrace: #{inspect(__STACKTRACE__)}. Continuing with current solutions."
+                )
+
+                # Continue with solutions from before this problematic pattern
+                current_solutions
             end
           end)
+
         Logger.debug("Base results: #{inspect(results)}")
         {:ok, results}
       end
@@ -205,32 +123,47 @@ defmodule Kylix.Query.SparqlExecutor do
   defp execute_pattern(pattern, binding) do
     # Assuming pattern and binding are valid maps due to prior checks or logic
     {s, p, o} = extract_pattern_values(pattern, binding)
-    Logger.debug("SparqlExecutor: Executing DAG query with pattern: {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}} for binding: #{inspect(binding)}")
-    
+
+    Logger.debug(
+      "SparqlExecutor: Executing DAG query with pattern: {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}} for binding: #{inspect(binding)}"
+    )
+
     try do
       case Kylix.Storage.Coordinator.query({s, p, o}) do
         {:ok, results} ->
           # Assuming convert_dag_results is now robust from previous fixes
           convert_dag_results(results, pattern)
+
         {:error, reason} ->
-          Logger.error("SparqlExecutor: Coordinator.query returned explicit error: #{inspect(reason)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}")
+          Logger.error(
+            "SparqlExecutor: Coordinator.query returned explicit error: #{inspect(reason)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}"
+          )
+
           []
+
         unexpected_value ->
           # This case handles returns from Coordinator.query that are neither {:ok, _} nor {:error, _}
-          Logger.error("SparqlExecutor: Coordinator.query returned an unexpected value: #{inspect(unexpected_value)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Treating as no results.")
+          Logger.error(
+            "SparqlExecutor: Coordinator.query returned an unexpected value: #{inspect(unexpected_value)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Treating as no results."
+          )
+
           []
       end
     rescue
       # Catch specific errors that might arise if Coordinator.query (or DAGEngine.query) has an internal issue
       # and raises instead of returning {:error, ...}
       e in [BadMapError, KeyError] ->
-        Logger.error("SparqlExecutor: Rescued critical error during Coordinator.query processing for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Stacktrace: #{inspect(__STACKTRACE__)}. Returning empty results.")
+        Logger.error(
+          "SparqlExecutor: Rescued critical error during Coordinator.query processing for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Stacktrace: #{inspect(__STACKTRACE__)}. Returning empty results."
+        )
+
         []
-      # Optionally, catch other exceptions if deemed necessary, or let them propagate to be caught by execute_base_patterns
-      # For now, only BadMapError and KeyError are caught here.
-      # e ->
-      #   Logger.error("SparqlExecutor: Rescued other exception during Coordinator.query for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Rethrowing.")
-      #   reraise e, __STACKTRACE__
+
+        # Optionally, catch other exceptions if deemed necessary, or let them propagate to be caught by execute_base_patterns
+        # For now, only BadMapError and KeyError are caught here.
+        # e ->
+        #   Logger.error("SparqlExecutor: Rescued other exception during Coordinator.query for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Rethrowing.")
+        #   reraise e, __STACKTRACE__
     end
   end
 
@@ -239,41 +172,55 @@ defmodule Kylix.Query.SparqlExecutor do
       case item do
         {node_id, data, edges} when is_map(data) ->
           # Ensure essential fields are present before creating the base map
-          if Map.has_key?(data, :subject) && Map.has_key?(data, :predicate) && Map.has_key?(data, :object) do
+          if Map.has_key?(data, :subject) && Map.has_key?(data, :predicate) &&
+               Map.has_key?(data, :object) do
             current_result_base = %{
               "node_id" => node_id,
               "s" => data.subject,
               "p" => data.predicate,
               "o" => data.object
             }
-            
+
             # Add optional fields if they exist in data
-            current_result_with_optional = 
-              Enum.reduce([{"validator", :validator}, {"timestamp", :timestamp}], current_result_base, fn {str_key, atom_key}, inner_acc ->
-                if Map.has_key?(data, atom_key) do
-                  Map.put(inner_acc, str_key, Map.get(data, atom_key))
-                else
-                  inner_acc
+            current_result_with_optional =
+              Enum.reduce(
+                [{"validator", :validator}, {"timestamp", :timestamp}],
+                current_result_base,
+                fn {str_key, atom_key}, inner_acc ->
+                  if Map.has_key?(data, atom_key) do
+                    Map.put(inner_acc, str_key, Map.get(data, atom_key))
+                  else
+                    inner_acc
+                  end
                 end
-              end)
+              )
 
             current_result_final = Map.put(current_result_with_optional, "edges", edges)
-            
+
             # Assuming VariableMapper correctly uses the "s", "p", "o" from current_result_final.
             # Original re-mapping lines based on pattern[:s] == nil are omitted for now.
-            
-            final_mapped_result = Kylix.Query.VariableMapper.apply_mappings(current_result_final, data)
+
+            final_mapped_result = Roles.apply_mappings(current_result_final, data)
             [final_mapped_result | acc]
           else
-            Logger.warning("SparqlExecutor: Skipping result item due to map data missing core :subject, :predicate, or :object fields. Data: #{inspect(data)}, Pattern: #{inspect(pattern)}")
+            Logger.warning(
+              "SparqlExecutor: Skipping result item due to map data missing core :subject, :predicate, or :object fields. Data: #{inspect(data)}, Pattern: #{inspect(pattern)}"
+            )
+
             acc
           end
-        item_to_log -> # Renamed from _invalid_item
-          Logger.warning("SparqlExecutor: Skipping invalid item from Coordinator.query. Expected {node_id, data_map, edges}. Got: #{inspect(item_to_log)}, Pattern: #{inspect(pattern)}")
+
+        # Renamed from _invalid_item
+        item_to_log ->
+          Logger.warning(
+            "SparqlExecutor: Skipping invalid item from Coordinator.query. Expected {node_id, data_map, edges}. Got: #{inspect(item_to_log)}, Pattern: #{inspect(pattern)}"
+          )
+
           acc
       end
     end)
-    |> Enum.reverse() # Reverse because items were prepended
+    # Reverse because items were prepended
+    |> Enum.reverse()
   end
 
   defp extract_pattern_values(pattern, binding) do
@@ -332,11 +279,14 @@ defmodule Kylix.Query.SparqlExecutor do
       )
 
     # Start with the current solution
-    Enum.reduce_while(new_triple_bindings, current_solution, fn {key_from_triple, value_from_triple}, acc ->
-      if is_nil(acc) do # Propagate nil if a conflict already occurred and halted the accumulator
+    Enum.reduce_while(new_triple_bindings, current_solution, fn {key_from_triple,
+                                                                 value_from_triple},
+                                                                acc ->
+      # Propagate nil if a conflict already occurred and halted the accumulator
+      if is_nil(acc) do
         {:halt, nil}
       else
-        target_var_name_for_binding = 
+        target_var_name_for_binding =
           cond do
             key_from_triple == "s" && s_var_name_in_pattern -> s_var_name_in_pattern
             key_from_triple == "p" && p_var_name_in_pattern -> p_var_name_in_pattern
@@ -352,12 +302,16 @@ defmodule Kylix.Query.SparqlExecutor do
           # This is a variable we need to bind
           if Map.has_key?(acc, target_var_name_for_binding) do
             existing_val = Map.get(acc, target_var_name_for_binding)
+
             # Compatible if values are same, or if existing was nil (first binding for this var in this solution path)
             if existing_val == value_from_triple or is_nil(existing_val) do
               {:cont, Map.put(acc, target_var_name_for_binding, value_from_triple)}
             else
               if MapSet.member?(pattern_vars, target_var_name_for_binding) do
-                Logger.debug("SparqlExecutor: merge_bindings conflict for variable '#{target_var_name_for_binding}'. Existing: '#{inspect(existing_val)}', New: '#{inspect(value_from_triple)}'. Discarding solution branch.")
+                Logger.debug(
+                  "SparqlExecutor: merge_bindings conflict for variable '#{target_var_name_for_binding}'. Existing: '#{inspect(existing_val)}', New: '#{inspect(value_from_triple)}'. Discarding solution branch."
+                )
+
                 {:halt, nil}
               else
                 {:cont, acc}
@@ -432,6 +386,7 @@ defmodule Kylix.Query.SparqlExecutor do
           Enum.filter(results, fn result ->
             Enum.all?(filters, fn filter -> apply_filter(result, filter) end)
           end)
+
         {:ok, filtered_results}
       end
     rescue
@@ -441,24 +396,34 @@ defmodule Kylix.Query.SparqlExecutor do
 
   defp apply_filter(result, filter) do
     case filter.type do
-      :equality -> Map.get(result, filter.variable) == filter.value
-      :inequality -> Map.get(result, filter.variable) != filter.value
+      :equality ->
+        Map.get(result, filter.variable) == filter.value
+
+      :inequality ->
+        Map.get(result, filter.variable) != filter.value
+
       :greater_than ->
         value = Map.get(result, filter.variable)
         is_number(value) && is_number(filter.value) && value > filter.value
+
       :less_than ->
         value = Map.get(result, filter.variable)
         is_number(value) && is_number(filter.value) && value < filter.value
+
       :greater_than_equal ->
         value = Map.get(result, filter.variable)
         is_number(value) && is_number(filter.value) && value >= filter.value
+
       :less_than_equal ->
         value = Map.get(result, filter.variable)
         is_number(value) && is_number(filter.value) && value <= filter.value
+
       :regex ->
         value = Map.get(result, filter.variable)
         is_binary(value) && Regex.match?(Regex.compile!(filter.pattern), value)
-      _ -> true
+
+      _ ->
+        true
     end
   end
 
@@ -472,6 +437,7 @@ defmodule Kylix.Query.SparqlExecutor do
             {:ok, optional_results} = execute_base_patterns(optional.patterns)
             optional_filters = Map.get(optional, :filters, [])
             {:ok, filtered_optional_results} = apply_filters(optional_results, optional_filters)
+
             Enum.map(current_results, fn base_result ->
               matching_optionals =
                 Enum.filter(filtered_optional_results, fn opt_result ->
@@ -479,12 +445,14 @@ defmodule Kylix.Query.SparqlExecutor do
                     base_result["s"] == opt_result["s"] ||
                     base_result["o"] == opt_result["s"]
                 end)
+
               case matching_optionals do
                 [] -> Map.put(base_result, "email", nil)
                 [first_match | _] -> Map.put(base_result, "email", first_match["o"])
               end
             end)
           end)
+
         {:ok, with_optionals}
       end
     rescue
@@ -498,7 +466,7 @@ defmodule Kylix.Query.SparqlExecutor do
         aggregates = Map.get(query_structure, :aggregates, [])
         group_by = Map.get(query_structure, :group_by, [])
         var_positions = Map.get(query_structure, :variable_positions, %{})
-        aggregated = SparqlAggregator.apply_aggregations(results, aggregates, group_by, var_positions)
+        aggregated = Count.apply_aggregations(results, aggregates, group_by, var_positions)
         Logger.debug("After aggregation: #{inspect(aggregated)}")
         {:ok, aggregated}
       else
@@ -520,6 +488,7 @@ defmodule Kylix.Query.SparqlExecutor do
               a_val = Map.get(a, ordering.variable)
               b_val = Map.get(b, ordering.variable)
               comparison = compare_values(a_val, b_val)
+
               if comparison == 0 do
                 {:cont, nil}
               else
@@ -528,6 +497,7 @@ defmodule Kylix.Query.SparqlExecutor do
               end
             end) || false
           end)
+
         {:ok, ordered}
       end
     rescue
@@ -538,21 +508,40 @@ defmodule Kylix.Query.SparqlExecutor do
   defp compare_values(a, b) when is_nil(a) and is_nil(b), do: 0
   defp compare_values(a, _) when is_nil(a), do: -1
   defp compare_values(_, b) when is_nil(b), do: 1
+
   defp compare_values(a, b) when is_number(a) and is_number(b) do
-    cond do a < b -> -1; a > b -> 1; true -> 0 end
+    cond do
+      a < b -> -1
+      a > b -> 1
+      true -> 0
+    end
   end
+
   defp compare_values(a, b) when is_binary(a) and is_binary(b) do
-    cond do a < b -> -1; a > b -> 1; true -> 0 end
+    cond do
+      a < b -> -1
+      a > b -> 1
+      true -> 0
+    end
   end
+
   defp compare_values(%DateTime{} = a, %DateTime{} = b) do
-    case DateTime.compare(a, b) do :lt -> -1; :gt -> 1; :eq -> 0 end
+    case DateTime.compare(a, b) do
+      :lt -> -1
+      :gt -> 1
+      :eq -> 0
+    end
   end
+
   defp compare_values(a, b), do: compare_values(to_string(a), to_string(b))
 
   defp apply_limits(results, limit, offset) do
     try do
       offset_results = if offset && offset > 0, do: Enum.drop(results, offset), else: results
-      limited_results = if limit && limit > 0, do: Enum.take(offset_results, limit), else: offset_results
+
+      limited_results =
+        if limit && limit > 0, do: Enum.take(offset_results, limit), else: offset_results
+
       {:ok, limited_results}
     rescue
       e -> {:error, "Error applying LIMIT/OFFSET: #{Exception.message(e)}"}
@@ -560,9 +549,11 @@ defmodule Kylix.Query.SparqlExecutor do
   end
 
   defp project_variables(results, variables, query_structure) do
-    projected = Enum.map(results, fn binding ->
-      create_projection(binding, variables, query_structure)
-    end)
+    projected =
+      Enum.map(results, fn binding ->
+        create_projection(binding, variables, query_structure)
+      end)
+
     {:ok, projected}
   end
 
@@ -573,13 +564,13 @@ defmodule Kylix.Query.SparqlExecutor do
     Enum.reduce(variables_in_select, %{}, fn var_with_q_mark, projected_map ->
       # Default projected key is the variable name without '?'
       proj_key = String.trim_leading(var_with_q_mark, "?")
-      
+
       # 1. Best case: binding has the full variable name (e.g., "?entity")
       # 2. Next best: binding has the base variable name (e.g., "entity")
       #    This covers cases where VariableMapper added role names that match SELECT vars.
       # 3. Fallback logic: If not found by full or base name, it's nil.
       value = Map.get(binding, var_with_q_mark, Map.get(binding, proj_key))
-        
+
       Map.put(projected_map, proj_key, value)
     end)
   end
