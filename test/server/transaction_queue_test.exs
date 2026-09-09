@@ -4,28 +4,13 @@ defmodule Kylix.Server.TransactionQueueTest do
 
   # Test initialization following the pattern from successful integration tests
   setup do
-    # Stop any running application first
-    Application.stop(:kylix)
+    Kylix.Test.App.restart()
 
-    # Start the application
-    {:ok, _} = Application.ensure_all_started(:kylix)
-
-    # Ensure the BlockchainServer is running
-    # Wait a moment to make sure it's registered
-    Process.sleep(100)
-
-    # Verify the blockchain server is running
     server_pid = Process.whereis(Kylix.BlockchainServer)
 
     unless server_pid do
       flunk("BlockchainServer not running - required for this test")
     end
-
-    # Clear the DAG storage
-    Kylix.Storage.DAGEngine.clear_all()
-
-    # Reset transaction count
-    :ok = Kylix.BlockchainServer.reset_tx_count(0)
 
     queue_pid = Process.whereis(TransactionQueue)
 

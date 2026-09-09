@@ -57,14 +57,6 @@ defmodule Kylix.BlockchainServer do
     GenServer.call(__MODULE__, {:add_transaction, s, p, o, validator_id, signature})
   end
 
-  # Query the blockchain for transactions matching the given pattern
-  # Pattern is a tuple in the form {subject, predicate, object} where nil acts as a wildcard
-  # Returns {:ok, results} where results is a list of matching transactions
-  @spec query({any(), any(), any()}) :: {:ok, [tuple()]}
-  def query(pattern) do
-    GenServer.call(__MODULE__, {:query, pattern})
-  end
-
   # Get the current transaction count (equivalent to the current round)
   @spec get_tx_count() :: non_neg_integer()
   def get_tx_count() do
@@ -87,18 +79,6 @@ defmodule Kylix.BlockchainServer do
           {:ok, String.t()} | {:error, atom()}
   def add_validator(validator_id, pubkey, known_by) do
     GenServer.call(__MODULE__, {:add_validator, validator_id, pubkey, known_by})
-  end
-
-  # Reset the transaction counter to a specific value (used for testing)
-  # This is not part of the public API and should only be used in test scenarios
-  @spec reset_tx_count(non_neg_integer()) :: :ok
-  def reset_tx_count(count) do
-    GenServer.call(__MODULE__, {:reset_tx_count, count})
-  end
-
-  @impl true
-  def handle_call({:reset_tx_count, count}, _from, state) do
-    {:reply, :ok, %{state | tx_count: count}}
   end
 
   @impl true
@@ -133,15 +113,6 @@ defmodule Kylix.BlockchainServer do
       {:reply, {:ok, validator_id}, new_state}
     else
       {:reply, {:error, :unknown_validator}, state}
-    end
-  end
-
-  @impl true
-  def handle_call({:query, pattern}, _from, state) do
-    # Forward to the Coordinator for proper query handling
-    case Kylix.Storage.Coordinator.query(pattern) do
-      {:ok, results} -> {:reply, {:ok, results}, state}
-      other -> {:reply, other, state}
     end
   end
 
@@ -257,11 +228,11 @@ defmodule Kylix.BlockchainServer do
       hash: Base.encode16(tx_hash)
     }
 
-    :ok = Kylix.Storage.Coordinator.add_node(tx_id, tx_data)
+    :ok = Kylix.Storage.add_node(tx_id, tx_data)
 
     if state.tx_count > 0 do
       prev_tx_id = "tx#{state.tx_count}"
-      :ok = Kylix.Storage.Coordinator.add_edge(prev_tx_id, tx_id, "confirms")
+      :ok = Kylix.Storage.add_edge(prev_tx_id, tx_id, "confirms")
     end
 
     new_state = %{state | tx_count: state.tx_count + 1, last_block_time: timestamp}
@@ -270,7 +241,7 @@ defmodule Kylix.BlockchainServer do
 
   # Check for duplicate transactions
   defp check_duplicate_direct(s, p, o) do
-    case Kylix.Storage.Coordinator.query({s, p, o}) do
+    case Kylix.Storage.query({s, p, o}) do
       {:ok, []} -> false
       {:ok, _results} -> true
       # Assume no duplicates on error

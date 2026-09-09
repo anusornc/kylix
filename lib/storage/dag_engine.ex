@@ -41,20 +41,6 @@ defmodule Kylix.Storage.DAGEngine do
     {:ok, %{}}
   end
 
-  # Add this public function to the DAGEngine module
-  def clear_all(), do: GenServer.call(__MODULE__, :clear_all)
-
-  # Add this handle_call implementation
-  @impl true
-  def handle_call(:clear_all, _from, state) do
-    :ets.delete_all_objects(@table)
-    :ets.delete_all_objects(@edge_table)
-    :ets.delete_all_objects(:subject_index)
-    :ets.delete_all_objects(:predicate_index)
-    :ets.delete_all_objects(:object_index)
-    {:reply, :ok, state}
-  end
-
   @impl true
   def handle_call({:add_node, node_id, data}, _from, state) do
     require Logger

@@ -15,7 +15,7 @@ Kylix aims to provide a scalable, semantic blockchain for tracking provenance in
 ## Usage
 1. Start: `iex -S mix`
 2. Add transaction: `Kylix.add_transaction("entity1", "wasGeneratedBy", "activity1", "agent1", "valid_sig")`
-3. Query: `Kylix.query({"entity1", "wasGeneratedBy", nil})`
+3. Query: `Kylix.Query.SparqlEngine.execute("SELECT ?activity WHERE { \"entity:fig1\" prov:wasGeneratedBy ?activity . }")`
 4. Add validator: `Kylix.add_validator("agent4", "pubkey4", "agent1")`
 5. Validators: `Kylix.get_validators()`
 

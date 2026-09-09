@@ -22,9 +22,8 @@ defmodule Mix.Tasks.Eval.Kylix do
       )
     end
 
-    Mix.Task.run("app.start")
-    Kylix.Storage.DAGEngine.clear_all()
-    :ok = Kylix.BlockchainServer.reset_tx_count(0)
+    _ = Application.stop(:kylix)
+    {:ok, _} = Application.ensure_all_started(:kylix)
 
     {:ok, {public_key, private_key}} = Kylix.Auth.SignatureVerifier.generate_test_key_pair()
     {:ok, attester} = Kylix.add_validator("fig1_attester", public_key, "agent1")

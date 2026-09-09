@@ -11,7 +11,6 @@ defmodule Kylix.API.RouterTest do
     # Modules to mock
     mocks = [
       Kylix,
-      Kylix.Storage.Coordinator,
       Kylix.Query.SparqlEngine,
       Kylix.Benchmark.TransactionSpeed,
       Kylix.API.Dashboard
@@ -35,86 +34,16 @@ defmodule Kylix.API.RouterTest do
   end
 
   describe "GET /transactions" do
-    test "returns a formatted list of transactions on success" do
-      # Set up mock data
-      mock_node_id = "node123"
-
-      mock_data = %{
-        subject: "sub1",
-        predicate: "pred1",
-        object: "obj1",
-        validator: "val1",
-        timestamp: ~U[2023-01-01 12:00:00Z],
-        hash: "somehash"
-      }
-
-      mock_edges = [{"from1", "to1", "label1"}, {"to2", "label2"}]
-
-      :meck.expect(Kylix.Storage.Coordinator, :query, fn {nil, nil, nil} ->
-        {:ok, [{mock_node_id, mock_data, mock_edges}]}
-      end)
-
+    test "does not dump persist" do
       conn = conn(:get, "/transactions")
       conn = Router.call(conn, @opts)
 
       assert conn.state == :sent
-      assert conn.status == 200
-
-      response = Jason.decode!(conn.resp_body)
-      assert response["status"] == "success"
-
-      [tx] = response["data"]
-      assert tx["id"] == mock_node_id
-      assert tx["subject"] == mock_data.subject
-      assert tx["predicate"] == mock_data.predicate
-      assert tx["object"] == mock_data.object
-      assert tx["validator"] == mock_data.validator
-      assert tx["hash"] == mock_data.hash
-
-      edges = tx["edges"]
-      assert length(edges) == 2
-      assert %{"from" => "from1", "to" => "to1", "label" => "label1"} in edges
-      assert %{"to" => "to2", "label" => "label2"} in edges
-    end
-
-    test "generates hash when missing and formats datetime" do
-      mock_data = %{
-        subject: "sub1",
-        predicate: "pred1",
-        object: "obj1"
-        # missing validator, timestamp, hash
-      }
-
-      :meck.expect(Kylix.Storage.Coordinator, :query, fn _ ->
-        {:ok, [{"node1", mock_data, []}]}
-      end)
-
-      conn = conn(:get, "/transactions")
-      conn = Router.call(conn, @opts)
-
-      assert conn.status == 200
-      response = Jason.decode!(conn.resp_body)
-
-      [tx] = response["data"]
-      assert tx["validator"] == nil
-      assert tx["timestamp"] == nil
-      assert is_binary(tx["hash"])
-    end
-
-    test "returns 500 when query fails" do
-      :meck.expect(Kylix.Storage.Coordinator, :query, fn _ ->
-        {:error, "database down"}
-      end)
-
-      conn = conn(:get, "/transactions")
-      conn = Router.call(conn, @opts)
-
-      assert conn.state == :sent
-      assert conn.status == 500
+      assert conn.status == 404
 
       response = Jason.decode!(conn.resp_body)
       assert response["status"] == "error"
-      assert response["message"] == "Failed to fetch transactions: database down"
+      assert response["message"] == "Route not found"
     end
   end
 
@@ -251,13 +180,7 @@ defmodule Kylix.API.RouterTest do
   end
 
   describe "GET /metrics" do
-    test "returns formatted system metrics" do
-      mock_results = [{"node1", %{subject: "a", predicate: "b", object: "c"}, [{1, 2, "label"}]}]
-
-      :meck.expect(Kylix.Storage.Coordinator, :query, fn {nil, nil, nil} ->
-        {:ok, mock_results}
-      end)
-
+    test "returns leftover benchmark fields without a graph dump" do
       conn = conn(:get, "/metrics")
       conn = Router.call(conn, @opts)
 
@@ -268,9 +191,7 @@ defmodule Kylix.API.RouterTest do
       assert response["status"] == "success"
 
       metrics = response["data"]
-      assert metrics["storage"]["node_count"] == 1
-      assert metrics["storage"]["edge_count"] == 1
-
+      refute Map.has_key?(metrics, "storage")
       assert metrics["benchmarks"]["results"] == []
       assert metrics["benchmarks"]["latest"] == nil
     end

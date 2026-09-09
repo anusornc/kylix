@@ -1,6 +1,16 @@
 ExUnit.start()
 {:ok, _} = Application.ensure_all_started(:kylix)
 
+defmodule Kylix.Test.App do
+  @moduledoc false
+
+  def restart do
+    _ = Application.stop(:kylix)
+    {:ok, _} = Application.ensure_all_started(:kylix)
+    :ok
+  end
+end
+
 defmodule Kylix.Test.Attester do
   @moduledoc false
 

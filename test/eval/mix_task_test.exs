@@ -3,9 +3,7 @@ defmodule Mix.Tasks.Eval.KylixTest do
   import ExUnit.CaptureIO
 
   setup do
-    :ok = Application.stop(:kylix)
-    {:ok, _} = Application.ensure_all_started(:kylix)
-    :ok
+    Kylix.Test.App.restart()
   end
 
   test "mix eval.kylix emits the correctness table" do

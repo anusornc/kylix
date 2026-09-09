@@ -3,10 +3,7 @@ defmodule Kylix.Eval.RunnerTest do
   import ExUnit.CaptureIO
 
   setup do
-    :ok = Application.stop(:kylix)
-    {:ok, _} = Application.ensure_all_started(:kylix)
-    Kylix.Storage.DAGEngine.clear_all()
-    :ok = Kylix.BlockchainServer.reset_tx_count(0)
+    Kylix.Test.App.restart()
 
     {public_key, private_key} = Kylix.Test.Attester.generate_keys()
     attester = Kylix.Test.Attester.seed("fig1_attester", public_key)

@@ -129,41 +129,31 @@ defmodule Kylix.Query.SparqlEngine.Join do
     )
 
     try do
-      case Kylix.Storage.Coordinator.query({s, p, o}) do
+      case Kylix.Storage.query({s, p, o}) do
         {:ok, results} ->
-          # Assuming convert_dag_results is now robust from previous fixes
           convert_dag_results(results, pattern)
 
         {:error, reason} ->
           Logger.error(
-            "SparqlExecutor: Coordinator.query returned explicit error: #{inspect(reason)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}"
+            "SparqlExecutor: persist match returned explicit error: #{inspect(reason)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}"
           )
 
           []
 
         unexpected_value ->
-          # This case handles returns from Coordinator.query that are neither {:ok, _} nor {:error, _}
           Logger.error(
-            "SparqlExecutor: Coordinator.query returned an unexpected value: #{inspect(unexpected_value)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Treating as no results."
+            "SparqlExecutor: persist match returned an unexpected value: #{inspect(unexpected_value)} for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Treating as no results."
           )
 
           []
       end
     rescue
-      # Catch specific errors that might arise if Coordinator.query (or DAGEngine.query) has an internal issue
-      # and raises instead of returning {:error, ...}
       e in [BadMapError, KeyError] ->
         Logger.error(
-          "SparqlExecutor: Rescued critical error during Coordinator.query processing for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Stacktrace: #{inspect(__STACKTRACE__)}. Returning empty results."
+          "SparqlExecutor: Rescued critical error during persist match for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Stacktrace: #{inspect(__STACKTRACE__)}. Returning empty results."
         )
 
         []
-
-        # Optionally, catch other exceptions if deemed necessary, or let them propagate to be caught by execute_base_patterns
-        # For now, only BadMapError and KeyError are caught here.
-        # e ->
-        #   Logger.error("SparqlExecutor: Rescued other exception during Coordinator.query for pattern {#{inspect(s)}, #{inspect(p)}, #{inspect(o)}}. Error: #{inspect(e)}. Rethrowing.")
-        #   reraise e, __STACKTRACE__
     end
   end
 
@@ -213,7 +203,7 @@ defmodule Kylix.Query.SparqlEngine.Join do
         # Renamed from _invalid_item
         item_to_log ->
           Logger.warning(
-            "SparqlExecutor: Skipping invalid item from Coordinator.query. Expected {node_id, data_map, edges}. Got: #{inspect(item_to_log)}, Pattern: #{inspect(pattern)}"
+            "SparqlExecutor: Skipping invalid item from persist match. Expected {node_id, data_map, edges}. Got: #{inspect(item_to_log)}, Pattern: #{inspect(pattern)}"
           )
 
           acc
@@ -225,7 +215,7 @@ defmodule Kylix.Query.SparqlEngine.Join do
 
   defp extract_pattern_values(pattern, binding) do
     # pattern is expected to be a map like %{"s" => "?s_var", "p" => "<literal>", "o" => "?o_var"}
-    # or %{"s" => nil, ...} if a component is a wildcard for Coordinator.query
+    # or %{"s" => nil, ...} if a component is a wildcard for persist match
     # binding is a map like %{"?s_var" => "actual_value_for_s"}
 
     resolve_value = fn key_str ->

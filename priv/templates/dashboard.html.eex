@@ -35,43 +35,7 @@
           <p class="text-gray-600">A DAG-based blockchain for provenance tracking</p>
         </header>
 
-        <!-- 1. Transaction Explorer Section - Now full width -->
-        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-          <h2 class="text-xl font-semibold mb-4">Transaction Explorer</h2>
-          <div class="mb-4 flex flex-wrap gap-4">
-            <input id="txSearch" type="text" placeholder="Search by ID, subject, predicate, or object"
-              class="flex-grow p-2 border border-gray-300 rounded">
-            <button id="loadTxBtn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-              Load Transactions
-            </button>
-            <select id="txSortOrder" class="p-2 border border-gray-300 rounded">
-              <option value="id_asc">ID (Ascending)</option>
-              <option value="id_desc">ID (Descending)</option>
-              <option value="timestamp_desc" selected>Newest First</option>
-              <option value="timestamp_asc">Oldest First</option>
-            </select>
-          </div>
-          <div id="txResults" class="mt-4 overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Predicate</th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Object</th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validator</th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hash</th>
-                </tr>
-              </thead>
-              <tbody id="txTableBody" class="divide-y divide-gray-200">
-                <!-- Transaction rows will go here -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- 2. SPARQL Query Section - Now full width -->
+        <!-- SPARQL Query Section -->
         <div class="bg-white p-6 rounded-lg shadow-md mb-8">
           <h2 class="text-xl font-semibold mb-4">SPARQL Query</h2>
           <div class="mb-4">
@@ -175,23 +139,6 @@
               </div>
             </div>
 
-            <!-- Storage Metrics -->
-            <div>
-              <h3 class="font-medium text-gray-700 mb-2">Storage Metrics</h3>
-              <div class="border rounded p-4 h-64">
-                <canvas id="storageChart"></canvas>
-              </div>
-              <div class="mt-2 grid grid-cols-2 gap-2 text-sm">
-                <div class="bg-gray-100 p-2 rounded">
-                  <div class="font-medium">Nodes</div>
-                  <div id="nodeCount" class="text-lg">-</div>
-                </div>
-                <div class="bg-gray-100 p-2 rounded">
-                  <div class="font-medium">Edges</div>
-                  <div id="edgeCount" class="text-lg">-</div>
-                </div>
-              </div>
-            </div>
           </div>
 
           <!-- Benchmark History -->
@@ -277,70 +224,6 @@
         }
       })
       .catch(error => console.error('Error loading validators:', error));
-
-    // Load transactions button handler
-    document.getElementById('loadTxBtn').addEventListener('click', function() {
-      loadTransactions();
-    });
-
-    // Sort order change
-    document.getElementById('txSortOrder').addEventListener('change', function() {
-      loadTransactions();
-    });
-
-    function loadTransactions() {
-      fetch('/transactions')
-        .then(response => response.json())
-        .then(data => {
-          if (data.status === 'success') {
-            const tableBody = document.getElementById('txTableBody');
-            tableBody.innerHTML = '';
-
-            // Get sort order
-            const sortOrder = document.getElementById('txSortOrder').value;
-            let sortedData = [...data.data];
-
-            // Apply sorting
-            switch(sortOrder) {
-              case 'id_asc':
-                sortedData.sort((a, b) => a.id.localeCompare(b.id));
-                break;
-              case 'id_desc':
-                sortedData.sort((a, b) => b.id.localeCompare(a.id));
-                break;
-              case 'timestamp_asc':
-                sortedData.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
-                break;
-              case 'timestamp_desc':
-                sortedData.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
-                break;
-            }
-
-            sortedData.forEach(tx => {
-              const row = document.createElement('tr');
-              // Convert timestamp to a more readable format
-              const timestamp = tx.timestamp ? new Date(tx.timestamp).toLocaleString() : 'N/A';
-              // Truncate hash for display
-              const hashDisplay = tx.hash ? tx.hash.substring(0, 12) + '...' : 'N/A';
-              const fullHash = tx.hash || 'N/A';
-
-              row.innerHTML = `
-                <td class="px-4 py-2">${tx.id}</td>
-                <td class="px-4 py-2">${tx.subject}</td>
-                <td class="px-4 py-2">${tx.predicate}</td>
-                <td class="px-4 py-2">${tx.object}</td>
-                <td class="px-4 py-2">${tx.validator || 'N/A'}</td>
-                <td class="px-4 py-2">${timestamp}</td>
-                <td class="px-4 py-2 tooltip" title="${fullHash}">${hashDisplay}</td>
-              `;
-              tableBody.appendChild(row);
-            });
-          } else {
-            alert('Error loading transactions: ' + data.message);
-          }
-        })
-        .catch(error => console.error('Error loading transactions:', error));
-    }
 
     // Run query button handler
     document.getElementById('runQueryBtn').addEventListener('click', function() {
@@ -430,8 +313,6 @@
             document.getElementById('txPredicate').value = '';
             document.getElementById('txObject').value = '';
 
-            // Refresh data
-            loadTransactions();
             loadBenchmarkData();
           } else {
             alert('Error submitting transaction: ' + data.message);
@@ -494,8 +375,6 @@
     // Initialize benchmark charts
     initBenchmarkCharts();
 
-    // Load initial data
-    loadTransactions();
     loadBenchmarkData();
 
     // Refresh benchmarks button handler
@@ -505,7 +384,7 @@
     });
 
     // Benchmark charts
-    let cacheChart, txThroughputChart, latencyDistChart, storageChart;
+    let cacheChart, txThroughputChart, latencyDistChart;
 
     function initBenchmarkCharts() {
     // Cache performance chart
@@ -584,28 +463,6 @@
       }
     });
 
-    // Storage chart (Bar chart showing nodes and edges)
-    const storageCtx = document.getElementById('storageChart').getContext('2d');
-    storageChart = new Chart(storageCtx, {
-      type: 'bar',
-      data: {
-        labels: ['Nodes', 'Edges'],
-        datasets: [{
-          label: 'Count',
-          data: [0, 0],
-          backgroundColor: ['#3498db', '#9b59b6']
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          y: {
-            beginAtZero: true
-          }
-        }
-      }
-    });
     }
 
     function loadBenchmarkData() {
@@ -627,18 +484,6 @@
             // Update cache metrics display
             document.getElementById('cacheHitRate').textContent = `${metrics.cache.hit_rate.toFixed(1)}%`;
             document.getElementById('cacheSize').textContent = `${metrics.cache.size} entries`;
-          }
-
-          // Update storage metrics display and chart
-          if (metrics.storage) {
-            document.getElementById('nodeCount').textContent = metrics.storage.node_count.toLocaleString();
-            document.getElementById('edgeCount').textContent = metrics.storage.edge_count.toLocaleString();
-
-            storageChart.data.datasets[0].data = [
-              metrics.storage.node_count,
-              metrics.storage.edge_count
-            ];
-            storageChart.update();
           }
 
           // Update benchmark data if available

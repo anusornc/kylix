@@ -1,15 +1,9 @@
 defmodule Kylix.Network.ValidatorNetworkTest do
   use ExUnit.Case
   alias Kylix.Network.ValidatorNetwork
-  alias Kylix.BlockchainServer
 
   setup do
-    # Stop and restart the application with a clean slate
-    :ok = Application.stop(:kylix)
-    {:ok, _} = Application.ensure_all_started(:kylix)
-
-    # Reset transaction count for each test
-    :ok = BlockchainServer.reset_tx_count(0)
+    Kylix.Test.App.restart()
 
     # Get the validator network process
     validator_pid = Process.whereis(ValidatorNetwork)

@@ -22,7 +22,7 @@ defmodule Kylix.Application do
   end
 
   defp setup_environment(db_path) do
-    case Kylix.Storage.Coordinator.adapter_module() do
+    case Kylix.Storage.adapter_module() do
       Kylix.Storage.PersistentDAGEngine -> File.mkdir_p!(db_path)
       _ -> :ok
     end
@@ -53,7 +53,7 @@ defmodule Kylix.Application do
   end
 
   defp persist_child(config) do
-    module = Kylix.Storage.Coordinator.adapter_module()
+    module = Kylix.Storage.adapter_module()
 
     case module do
       Kylix.Storage.PersistentDAGEngine -> {module, [db_path: config.db_path]}

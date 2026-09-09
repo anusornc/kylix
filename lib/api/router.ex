@@ -7,23 +7,6 @@ defmodule Kylix.API.Router do
   plug(Plug.Parsers, parsers: [:json], pass: ["application/json"], json_decoder: Jason)
   plug(:dispatch)
 
-  # GET /transactions - List transactions
-  get "/transactions" do
-    Logger.info("Listing transactions")
-
-    case Kylix.Storage.Coordinator.query({nil, nil, nil}) do
-      {:ok, results} ->
-        formatted_results = format_transaction_results(results)
-        send_json_resp(conn, 200, %{status: "success", data: formatted_results})
-
-      {:error, reason} ->
-        send_json_resp(conn, 500, %{
-          status: "error",
-          message: "Failed to fetch transactions: #{reason}"
-        })
-    end
-  end
-
   # POST /transactions - Submit new transaction
   post "/transactions" do
     Logger.info("Submitting transaction: #{inspect(conn.body_params)}")
@@ -76,28 +59,11 @@ defmodule Kylix.API.Router do
     send_json_resp(conn, 200, %{status: "success", data: validators})
   end
 
-  # GET /metrics - Fetch performance metrics
+  # GET /metrics - Fetch leftover benchmark fields
   get "/metrics" do
     Logger.info("Fetching performance metrics")
 
-    {:ok, results} = Kylix.Storage.Coordinator.query({nil, nil, nil})
-    node_count = length(results)
-
-    edge_count =
-      Enum.reduce(results, 0, fn {_, _, edges}, acc ->
-        acc + length(edges)
-      end)
-
-    benchmark_data = load_benchmark_data()
-
-    metrics = %{
-      storage: %{
-        node_count: node_count,
-        edge_count: edge_count
-      },
-      benchmarks: benchmark_data
-    }
-
+    metrics = %{benchmarks: load_benchmark_data()}
     send_json_resp(conn, 200, %{status: "success", data: metrics})
   end
 
@@ -195,46 +161,6 @@ defmodule Kylix.API.Router do
     conn
     |> put_resp_content_type("application/json")
     |> send_resp(status, Jason.encode!(data))
-  end
-
-  defp format_transaction_results(results) do
-    Enum.map(results, fn {node_id, data, edges} ->
-      # Generate hash if missing
-      hash =
-        case Map.get(data, :hash) do
-          nil ->
-            # Generate hash using same algorithm
-            hash_data =
-              "#{data.subject}|#{data.predicate}|#{data.object}|#{Map.get(data, :validator, "")}|#{DateTime.to_iso8601(Map.get(data, :timestamp, DateTime.utc_now()))}"
-
-            :crypto.hash(:sha256, hash_data) |> Base.encode16()
-
-          existing_hash ->
-            existing_hash
-        end
-
-      %{
-        id: node_id,
-        subject: data.subject,
-        predicate: data.predicate,
-        object: data.object,
-        validator: Map.get(data, :validator, nil),
-        timestamp: format_datetime(Map.get(data, :timestamp, nil)),
-        # Include calculated or existing hash
-        hash: hash,
-        edges: format_edges(edges)
-      }
-    end)
-  end
-
-  defp format_datetime(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
-  defp format_datetime(_), do: nil
-
-  defp format_edges(edges) do
-    Enum.map(edges, fn
-      {from, to, label} -> %{from: from, to: to, label: label}
-      {to, label} -> %{to: to, label: label}
-    end)
   end
 
   # Load transaction benchmark data from JSON files

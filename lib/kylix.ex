@@ -1,7 +1,7 @@
 defmodule Kylix do
   @moduledoc """
   Kylix is a blockchain application that uses a Directed Acyclic Graph (DAG) to store transactions.
-  It supports validator-based transaction processing and querying.
+  It supports validator-based transaction processing.
   """
 
   # Public API for interacting with the BlockchainServer
@@ -39,10 +39,6 @@ defmodule Kylix do
   """
   def get_queue_status do
     Kylix.Server.TransactionQueue.status()
-  end
-
-  def query(pattern) do
-    Kylix.BlockchainServer.query(pattern)
   end
 
   def get_validators do

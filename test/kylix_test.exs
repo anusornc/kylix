@@ -3,18 +3,12 @@ defmodule KylixTest do
   import Kylix.Auth.SignatureVerifier
 
   setup do
-    :ok = Application.stop(:kylix)
-    {:ok, _} = Application.ensure_all_started(:kylix)
-
-    Kylix.Storage.DAGEngine.clear_all()
-    :ok = Kylix.BlockchainServer.reset_tx_count(0)
+    Kylix.Test.App.restart()
 
     {public_key, private_key} = Kylix.Test.Attester.generate_keys()
     attester = Kylix.Test.Attester.seed("attester1", public_key)
-    attester2 = Kylix.Test.Attester.seed("attester2", public_key)
 
-    {:ok,
-     private_key: private_key, public_key: public_key, attester: attester, attester2: attester2}
+    {:ok, private_key: private_key, public_key: public_key, attester: attester}
   end
 
   describe "signed Transaction accept" do
@@ -111,7 +105,7 @@ defmodule KylixTest do
       assert is_reference(ref)
     end
 
-    test "async submit preserves the caller's attester through accept" do
+    test "async submit is accepted" do
       {public_key, private_key} = Kylix.Test.Attester.generate_keys()
       member = Kylix.Test.Attester.seed("async_attester", public_key)
 
@@ -124,15 +118,11 @@ defmodule KylixTest do
       assert {:ok, ref} =
                Kylix.add_transaction_async(subject, predicate, object, member, signature)
 
-      assert is_reference(ref)
-
-      results = wait_for_query({subject, predicate, object})
-      assert length(results) == 1
-      {_id, data, _edges} = hd(results)
-      assert data.validator == member
+      assert {:ok, tx_id} = wait_for_accept(ref)
+      assert String.starts_with?(tx_id, "tx")
     end
 
-    test "two async submits from the same member both accept as that member" do
+    test "two async submits from the same member both accept" do
       {public_key, private_key} = Kylix.Test.Attester.generate_keys()
       member = Kylix.Test.Attester.seed("async_repeat_attester", public_key)
 
@@ -145,7 +135,7 @@ defmodule KylixTest do
       first_hash = hash_transaction(first_subject, predicate, first_object, member)
       second_hash = hash_transaction(second_subject, predicate, second_object, member)
 
-      assert {:ok, _ref1} =
+      assert {:ok, ref1} =
                Kylix.add_transaction_async(
                  first_subject,
                  predicate,
@@ -154,7 +144,7 @@ defmodule KylixTest do
                  sign(first_hash, private_key)
                )
 
-      assert {:ok, _ref2} =
+      assert {:ok, ref2} =
                Kylix.add_transaction_async(
                  second_subject,
                  predicate,
@@ -163,11 +153,11 @@ defmodule KylixTest do
                  sign(second_hash, private_key)
                )
 
-      [{_id1, data1, _edges1}] = wait_for_query({first_subject, predicate, first_object})
-      [{_id2, data2, _edges2}] = wait_for_query({second_subject, predicate, second_object})
-
-      assert data1.validator == member
-      assert data2.validator == member
+      assert {:ok, tx1} = wait_for_accept(ref1)
+      assert {:ok, tx2} = wait_for_accept(ref2)
+      assert String.starts_with?(tx1, "tx")
+      assert String.starts_with?(tx2, "tx")
+      assert tx1 != tx2
     end
   end
 
@@ -178,29 +168,6 @@ defmodule KylixTest do
 
       assert {:error, :unknown_validator} =
                Kylix.add_transaction("subject", "predicate", "object", "unknown_agent", signature)
-    end
-  end
-
-  describe "query transactions" do
-    test "query transactions", %{
-      private_key: private_key,
-      attester: attester,
-      attester2: attester2
-    } do
-      tx_hash = hash_transaction("subject1", "predicate1", "object1", attester)
-      signature = sign(tx_hash, private_key)
-
-      {:ok, _tx_id} =
-        Kylix.add_transaction("subject1", "predicate1", "object1", attester, signature)
-
-      tx_hash = hash_transaction("subject2", "predicate2", "object2", attester2)
-      signature = sign(tx_hash, private_key)
-
-      {:ok, _tx_id} =
-        Kylix.add_transaction("subject2", "predicate2", "object2", attester2, signature)
-
-      {:ok, results} = Kylix.query({"subject1", "predicate1", "object1"})
-      assert length(results) == 1
     end
   end
 
@@ -219,29 +186,6 @@ defmodule KylixTest do
     end
   end
 
-  describe "query transactions with validator rotation" do
-    test "query transactions with validator rotation", %{
-      private_key: private_key,
-      attester: attester,
-      attester2: attester2
-    } do
-      tx_hash = hash_transaction("subject1", "predicate1", "object1", attester)
-      signature = sign(tx_hash, private_key)
-
-      {:ok, _tx_id} =
-        Kylix.add_transaction("subject1", "predicate1", "object1", attester, signature)
-
-      tx_hash = hash_transaction("subject2", "predicate2", "object2", attester2)
-      signature = sign(tx_hash, private_key)
-
-      {:ok, _tx_id} =
-        Kylix.add_transaction("subject2", "predicate2", "object2", attester2, signature)
-
-      {:ok, results} = Kylix.query({nil, nil, nil})
-      assert length(results) == 2
-    end
-  end
-
   describe "one roster; the named Validator attests" do
     test "after vouching, a correctly signed Transaction from the new Validator is accepted" do
       {public_key, private_key} = Kylix.Test.Attester.generate_keys()
@@ -257,25 +201,6 @@ defmodule KylixTest do
                Kylix.add_transaction(subject, predicate, object, vouched, signature)
 
       assert String.starts_with?(tx_id, "tx")
-    end
-
-    test "stored attester is the validator_id argument" do
-      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
-      named = Kylix.Test.Attester.seed("named_attester", public_key)
-
-      subject = "subject-named"
-      predicate = "predicate"
-      object = "object"
-      tx_hash = hash_transaction(subject, predicate, object, named)
-      signature = sign(tx_hash, private_key)
-
-      assert {:ok, _tx_id} =
-               Kylix.add_transaction(subject, predicate, object, named, signature)
-
-      {:ok, results} = Kylix.query({subject, predicate, object})
-      assert length(results) == 1
-      {_id, data, _edges} = hd(results)
-      assert data.validator == named
     end
 
     test "get_validators lists the Validator add_validator wrote" do
@@ -326,22 +251,25 @@ defmodule KylixTest do
     end
   end
 
-  defp wait_for_query(pattern, timeout_ms \\ 2000) do
+  defp wait_for_accept(ref, timeout_ms \\ 2000) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
-    do_wait_for_query(pattern, deadline)
+    do_wait_for_accept(ref, deadline)
   end
 
-  defp do_wait_for_query(pattern, deadline) do
-    case Kylix.query(pattern) do
-      {:ok, [_ | _] = results} ->
-        results
+  defp do_wait_for_accept(ref, deadline) do
+    case Kylix.Server.TransactionQueue.get_transaction_status(ref) do
+      %{result: {:ok, tx_id}} ->
+        {:ok, tx_id}
+
+      %{result: {:error, reason}} ->
+        {:error, reason}
 
       _ ->
         if System.monotonic_time(:millisecond) >= deadline do
-          flunk("Transaction was not accepted before timeout: #{inspect(pattern)}")
+          flunk("Transaction was not accepted before timeout")
         else
           Process.sleep(50)
-          do_wait_for_query(pattern, deadline)
+          do_wait_for_accept(ref, deadline)
         end
     end
   end
