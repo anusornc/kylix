@@ -89,15 +89,29 @@ defmodule Kylix.Eval.LineageSubsetTest do
     assert results == expected
   end
 
+  test "execute answers COUNT with GROUP BY" do
+    query = """
+    SELECT ?entity (COUNT(?entity) AS ?n)
+    WHERE { ?entity prov:wasAttributedTo "agent:alice" . }
+    GROUP BY ?entity
+    """
+
+    assert {:ok, results} = SparqlEngine.execute(query)
+
+    assert Enum.sort_by(results, & &1["entity"]) == [
+             %{"entity" => "entity:cleaned-data", "n" => 1},
+             %{"entity" => "entity:fig1", "n" => 1},
+             %{"entity" => "entity:model", "n" => 1}
+           ]
+  end
+
+  test "execute rejects ORDER BY split across whitespace" do
+    assert_rejected("SELECT ?s WHERE { \"entity:fig1\" prov:wasGeneratedBy ?s } ORDER\nBY ?s")
+  end
+
   test "only execute/1 is public" do
     assert Code.ensure_loaded?(SparqlEngine)
-    assert function_exported?(SparqlEngine, :execute, 1)
-    refute function_exported?(SparqlEngine, :explain, 1)
-    refute function_exported?(SparqlEngine, :example_queries, 0)
-    refute function_exported?(SparqlEngine, :query_pattern, 1)
-    refute function_exported?(SparqlEngine, :validate_sparql_query, 1)
-    refute function_exported?(SparqlEngine, :parse_query_structure, 1)
-    refute function_exported?(SparqlEngine, :preprocess_query, 1)
+    assert SparqlEngine.__info__(:functions) == [execute: 1]
   end
 
   defp assert_rejected(query) do

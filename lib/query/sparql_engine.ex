@@ -118,7 +118,7 @@ defmodule Kylix.Query.SparqlEngine do
 
       match =
           Regex.run(
-            ~r/\b(PREFIX|BASE|CONSTRUCT|DESCRIBE|ASK|OPTIONAL|UNION|FILTER|HAVING|DELETE|INSERT|DROP|LOAD|CLEAR|ORDER BY|LIMIT|OFFSET|SUM|AVG|MIN|MAX|GROUP_CONCAT|DISTINCT)\b/i,
+            ~r/\b(PREFIX|BASE|CONSTRUCT|DESCRIBE|ASK|OPTIONAL|UNION|FILTER|HAVING|DELETE|INSERT|DROP|LOAD|CLEAR|ORDER\s+BY|LIMIT|OFFSET|SUM|AVG|MIN|MAX|GROUP_CONCAT|DISTINCT)\b/i,
             query
           ) ->
         {:error, "#{hd(match)} is not in the lineage suite"}
