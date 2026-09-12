@@ -155,9 +155,12 @@ defmodule Kylix.Query.SparqlEngine do
 
   defp lineage_subset(query) do
     cond do
+      Regex.match?(~r/\bSELECT\s+\*/i, query) ->
+        {:error, "SELECT * is not in the lineage suite"}
+
       match =
           Regex.run(
-            ~r/\b(PREFIX|BASE|CONSTRUCT|DESCRIBE|ASK|OPTIONAL|UNION|FILTER|HAVING|DELETE|INSERT|DROP|LOAD|CLEAR)\b/i,
+            ~r/\b(PREFIX|BASE|CONSTRUCT|DESCRIBE|ASK|OPTIONAL|UNION|FILTER|HAVING|DELETE|INSERT|DROP|LOAD|CLEAR|ORDER BY|LIMIT|OFFSET|SUM|AVG|MIN|MAX|GROUP_CONCAT|DISTINCT)\b/i,
             query
           ) ->
         {:error, "#{hd(match)} is not in the lineage suite"}

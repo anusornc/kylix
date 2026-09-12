@@ -49,13 +49,30 @@ defmodule Kylix.Eval.LineageSubsetTest do
     {"INSERT", "INSERT { ?s ?p ?o } WHERE { ?s ?p ?o }"},
     {"DROP", "DROP GRAPH <http://example.org/>"},
     {"LOAD", "LOAD <http://example.org/data>"},
-    {"CLEAR", "CLEAR GRAPH <http://example.org/>"}
+    {"CLEAR", "CLEAR GRAPH <http://example.org/>"},
+    {"ORDER BY", "SELECT ?s WHERE { \"entity:fig1\" prov:wasGeneratedBy ?s } ORDER BY ?s"},
+    {"LIMIT", "SELECT ?s WHERE { \"entity:fig1\" prov:wasGeneratedBy ?s } LIMIT 1"},
+    {"OFFSET", "SELECT ?s WHERE { \"entity:fig1\" prov:wasGeneratedBy ?s } OFFSET 1"},
+    {"SUM", "SELECT (SUM(?e) AS ?n) WHERE { ?e prov:wasAttributedTo \"agent:alice\" }"},
+    {"AVG", "SELECT (AVG(?e) AS ?n) WHERE { ?e prov:wasAttributedTo \"agent:alice\" }"},
+    {"MIN", "SELECT (MIN(?e) AS ?n) WHERE { ?e prov:wasAttributedTo \"agent:alice\" }"},
+    {"MAX", "SELECT (MAX(?e) AS ?n) WHERE { ?e prov:wasAttributedTo \"agent:alice\" }"},
+    {"GROUP_CONCAT",
+     "SELECT (GROUP_CONCAT(?e) AS ?n) WHERE { ?e prov:wasAttributedTo \"agent:alice\" }"},
+    {"SELECT *", "SELECT * WHERE { \"entity:fig1\" prov:wasGeneratedBy ?s }"},
+    {"DISTINCT", "SELECT DISTINCT ?s WHERE { \"entity:fig1\" prov:wasGeneratedBy ?s }"},
+    {"COUNT DISTINCT",
+     "SELECT (COUNT(DISTINCT ?entity) AS ?n) WHERE { ?entity prov:wasAttributedTo \"agent:alice\" }"}
   ]
 
   for {name, query} <- @out_of_subset do
     test "execute rejects #{name}" do
       assert_rejected(unquote(query))
     end
+  end
+
+  test "execute rejects lowercase order by" do
+    assert_rejected("SELECT ?s WHERE { \"entity:fig1\" prov:wasGeneratedBy ?s } order by ?s")
   end
 
   test "execute still answers generated-by after Fig1 is recorded" do
