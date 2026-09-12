@@ -75,6 +75,12 @@ defmodule Kylix.Eval.LineageSubsetTest do
     assert_rejected("SELECT ?s WHERE { \"entity:fig1\" prov:wasGeneratedBy ?s } order by ?s")
   end
 
+  test "execute does not rewrite a non-SELECT string into SELECT" do
+    query = "?activity WHERE { \"entity:fig1\" prov:wasGeneratedBy ?activity . }"
+    assert {:error, reason} = SparqlEngine.execute(query)
+    assert reason =~ "not in the lineage suite"
+  end
+
   test "execute still answers generated-by after Fig1 is recorded" do
     query = Kylix.Eval.Suite.query("generated-by")
     expected = Kylix.Eval.Suite.expected("generated-by")
