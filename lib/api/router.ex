@@ -67,62 +67,6 @@ defmodule Kylix.API.Router do
     send_json_resp(conn, 200, %{status: "success", data: metrics})
   end
 
-  # POST /run-benchmark - Run a transaction speed test
-  post "/run-benchmark" do
-    Logger.info("Running transaction speed benchmark")
-
-    # Get benchmark parameters from request body or use defaults
-    count =
-      case conn.body_params do
-        %{"count" => count} -> count
-        # Default
-        _ -> 1000
-      end
-
-    # Run the benchmark
-    try do
-      # Call your existing benchmark module
-      benchmark_result = Kylix.Benchmark.TransactionSpeed.run_baseline_test(count)
-
-      # Format the result for JSON response
-      formatted_result = %{
-        "timestamp" => benchmark_result.timestamp,
-        "transaction_count" => benchmark_result.total_transactions,
-        # Your baseline test is sequential
-        "concurrent_connections" => 1,
-        "total_time_ms" => benchmark_result.total_time_ms,
-        "transactions_per_second" => benchmark_result.transactions_per_second,
-        # Convert μs to ms
-        "avg_latency_ms" => benchmark_result.average_tx_time_us / 1000,
-        "latency_percentiles" => %{
-          "min" => benchmark_result.min_tx_time_us / 1000,
-          # Not available in your results
-          "p25" => 0,
-          "p50" => benchmark_result.percentiles.p50 / 1000,
-          # Not available in your results
-          "p75" => 0,
-          "p95" => benchmark_result.percentiles.p95 / 1000,
-          "max" => benchmark_result.max_tx_time_us / 1000
-        }
-      }
-
-      # Return the result
-      send_json_resp(conn, 200, %{
-        status: "success",
-        message: "Benchmark completed successfully",
-        data: formatted_result
-      })
-    rescue
-      e ->
-        Logger.error("Benchmark error: #{Exception.message(e)}")
-
-        send_json_resp(conn, 500, %{
-          status: "error",
-          message: "Failed to run benchmark: #{Exception.message(e)}"
-        })
-    end
-  end
-
   # POST /validators - Add a new validator
   post "/validators" do
     with %{"validator_id" => validator_id, "pubkey" => pubkey, "known_by" => known_by} <-

@@ -12,7 +12,6 @@ defmodule Kylix.API.RouterTest do
     mocks = [
       Kylix,
       Kylix.Query.SparqlEngine,
-      Kylix.Benchmark.TransactionSpeed,
       Kylix.API.Dashboard
     ]
 
@@ -198,66 +197,16 @@ defmodule Kylix.API.RouterTest do
   end
 
   describe "POST /run-benchmark" do
-    test "runs benchmark and returns formatted results" do
-      mock_benchmark = %{
-        timestamp: "2023-01-01T12:00:00Z",
-        total_transactions: 1000,
-        total_time_ms: 500.5,
-        transactions_per_second: 2000.0,
-        average_tx_time_us: 500.0,
-        min_tx_time_us: 100.0,
-        max_tx_time_us: 1000.0,
-        percentiles: %{p50: 450.0, p95: 900.0}
-      }
-
-      :meck.expect(Kylix.Benchmark.TransactionSpeed, :run_baseline_test, fn 500 ->
-        mock_benchmark
-      end)
-
-      payload = %{"count" => 500}
-
-      conn =
-        conn(:post, "/run-benchmark", payload)
-        |> put_req_header("content-type", "application/json")
-
-      conn = Router.call(conn, @opts)
-
-      assert conn.state == :sent
-      assert conn.status == 200
-
-      response = Jason.decode!(conn.resp_body)
-      assert response["status"] == "success"
-      assert response["message"] == "Benchmark completed successfully"
-
-      data = response["data"]
-      assert data["timestamp"] == mock_benchmark.timestamp
-      assert data["transaction_count"] == mock_benchmark.total_transactions
-      assert data["concurrent_connections"] == 1
-      assert data["total_time_ms"] == mock_benchmark.total_time_ms
-      assert data["transactions_per_second"] == mock_benchmark.transactions_per_second
-      assert data["avg_latency_ms"] == mock_benchmark.average_tx_time_us / 1000
-
-      percentiles = data["latency_percentiles"]
-      assert percentiles["min"] == mock_benchmark.min_tx_time_us / 1000
-      assert percentiles["p25"] == 0
-      assert percentiles["p50"] == mock_benchmark.percentiles.p50 / 1000
-      assert percentiles["p75"] == 0
-      assert percentiles["p95"] == mock_benchmark.percentiles.p95 / 1000
-      assert percentiles["max"] == mock_benchmark.max_tx_time_us / 1000
-    end
-
-    test "returns 500 on benchmark crash" do
-      :meck.expect(Kylix.Benchmark.TransactionSpeed, :run_baseline_test, fn _ ->
-        raise "benchmark failed"
-      end)
-
+    test "is not a TPS door" do
       conn = conn(:post, "/run-benchmark")
       conn = Router.call(conn, @opts)
 
-      assert conn.status == 500
+      assert conn.state == :sent
+      assert conn.status == 404
+
       response = Jason.decode!(conn.resp_body)
       assert response["status"] == "error"
-      assert response["message"] == "Failed to run benchmark: benchmark failed"
+      assert response["message"] == "Route not found"
     end
   end
 
