@@ -23,6 +23,11 @@ defmodule Kylix.Eval.PersistNotPublicTest do
     refute function_exported?(Kylix.BlockchainServer, :query, 1)
   end
 
+  test "accept's process has no receive_transaction door" do
+    assert Code.ensure_loaded?(Kylix.BlockchainServer)
+    refute function_exported?(Kylix.BlockchainServer, :receive_transaction, 1)
+  end
+
   test "Coordinator is not a caller-facing name" do
     refute Code.ensure_loaded?(Kylix.Storage.Coordinator)
   end

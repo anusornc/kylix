@@ -18,36 +18,6 @@ defmodule Kylix.BlockchainServer do
     )
   end
 
-  def receive_transaction(tx_data) do
-    GenServer.cast(__MODULE__, {:receive_transaction, tx_data})
-  end
-
-  @impl true
-  def handle_cast({:receive_transaction, tx_data}, state) do
-    # Process received transaction from another validator
-    Logger.info("Received transaction from network: #{inspect(tx_data)}")
-
-    # Extract transaction data
-    s = tx_data["subject"]
-    p = tx_data["predicate"]
-    o = tx_data["object"]
-    validator_id = tx_data["validator"]
-    signature = tx_data["signature"]
-
-    # Process internally without making a GenServer call to self
-    {result, new_state} = do_add_transaction(s, p, o, validator_id, signature, state)
-
-    case result do
-      {:ok, tx_id} ->
-        Logger.info("Transaction from network added as #{tx_id}")
-        {:noreply, new_state}
-
-      {:error, reason} ->
-        Logger.warning("Failed to add network transaction: #{reason}")
-        {:noreply, state}
-    end
-  end
-
   # Add a new transaction to the blockchain with the given subject, predicate, object
   # Requires a valid validator_id and signature to be accepted
   # Returns {:ok, tx_id} if successful or an error tuple
@@ -151,7 +121,6 @@ defmodule Kylix.BlockchainServer do
   end
 
   # Shared implementation for adding transactions
-  # Used by both handle_call and handle_cast to avoid recursive calls
   defp do_add_transaction(s, p, o, validator_id, signature, state) do
     if !MapSet.member?(state.validator_set, validator_id) do
       {{:error, :unknown_validator}, state}
