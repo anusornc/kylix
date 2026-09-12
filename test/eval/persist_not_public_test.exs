@@ -32,6 +32,16 @@ defmodule Kylix.Eval.PersistNotPublicTest do
     refute function_exported?(Kylix, :persist, 1)
   end
 
+  test "disk adapter has no get_node peek" do
+    assert Code.ensure_loaded?(Kylix.Storage.PersistentDAGEngine)
+    refute function_exported?(Kylix.Storage.PersistentDAGEngine, :get_node, 1)
+  end
+
+  test "disk adapter has no get_all_nodes peek" do
+    assert Code.ensure_loaded?(Kylix.Storage.PersistentDAGEngine)
+    refute function_exported?(Kylix.Storage.PersistentDAGEngine, :get_all_nodes, 0)
+  end
+
   test "fig1 generated-by matches at execute/1 after isolating persist by restart", %{} do
     {public_key, private_key} = Kylix.Test.Attester.generate_keys()
     attester = Kylix.Test.Attester.seed("fig1_restart_attester", public_key)
