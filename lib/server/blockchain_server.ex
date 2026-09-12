@@ -25,12 +25,6 @@ defmodule Kylix.BlockchainServer do
     GenServer.call(__MODULE__, {:add_transaction, s, p, o, validator_id, signature})
   end
 
-  # Get the current transaction count (equivalent to the current round)
-  @spec get_tx_count() :: non_neg_integer()
-  def get_tx_count() do
-    GenServer.call(__MODULE__, :get_tx_count)
-  end
-
   # Get the list of current validators in the blockchain
   # Returns a list of validator identifiers
   @spec get_validators() :: [String.t()]
@@ -53,11 +47,6 @@ defmodule Kylix.BlockchainServer do
   def handle_call({:add_transaction, s, p, o, validator_id, signature}, _from, state) do
     {result, new_state} = do_add_transaction(s, p, o, validator_id, signature, state)
     {:reply, result, new_state}
-  end
-
-  @impl true
-  def handle_call(:get_tx_count, _from, state) do
-    {:reply, state.tx_count, state}
   end
 
   @impl true
@@ -101,7 +90,6 @@ defmodule Kylix.BlockchainServer do
 
     {:ok,
      %{
-       tx_count: 0,
        validators: validators,
        validator_set: MapSet.new(validators),
        public_keys: public_keys,
@@ -174,8 +162,6 @@ defmodule Kylix.BlockchainServer do
   end
 
   defp accept_verified_transaction(s, p, o, validator_id, signature, timestamp, tx_hash, state) do
-    tx_id = "tx#{state.tx_count + 1}"
-
     tx_data = %{
       subject: s,
       predicate: p,
@@ -186,15 +172,14 @@ defmodule Kylix.BlockchainServer do
       hash: Base.encode16(tx_hash)
     }
 
-    :ok = Kylix.Storage.add_node(tx_id, tx_data)
+    case Kylix.Storage.store(tx_data) do
+      {:ok, tx_id} ->
+        new_state = %{state | last_block_time: timestamp}
+        {{:ok, tx_id}, new_state}
 
-    if state.tx_count > 0 do
-      prev_tx_id = "tx#{state.tx_count}"
-      :ok = Kylix.Storage.add_edge(prev_tx_id, tx_id, "confirms")
+      {:error, reason} ->
+        {{:error, reason}, state}
     end
-
-    new_state = %{state | tx_count: state.tx_count + 1, last_block_time: timestamp}
-    {{:ok, tx_id}, new_state}
   end
 
   # Check for duplicate transactions

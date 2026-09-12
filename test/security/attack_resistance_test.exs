@@ -310,7 +310,7 @@ defmodule Kylix.Security.AttackResistanceTest do
           assert true
 
         {:ok, tx_id} ->
-          assert String.starts_with?(tx_id, "tx")
+          assert is_binary(tx_id)
       end
     end
 

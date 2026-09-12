@@ -121,11 +121,13 @@ defmodule Kylix.API.RouterTest do
 
   describe "GET /query" do
     test "returns results on successful query" do
-      :meck.expect(Kylix.Query.SparqlEngine, :execute, fn "SELECT *" ->
-        {:ok, [%{"var1" => "value1"}]}
+      query = ~s(SELECT ?activity WHERE { "entity:fig1" prov:wasGeneratedBy ?activity . })
+
+      :meck.expect(Kylix.Query.SparqlEngine, :execute, fn ^query ->
+        {:ok, [%{"activity" => "activity:plot"}]}
       end)
 
-      conn = conn(:get, "/query?q=SELECT%20*")
+      conn = conn(:get, "/query?q=#{URI.encode(query)}")
       conn = Router.call(conn, @opts)
 
       assert conn.state == :sent
@@ -133,7 +135,7 @@ defmodule Kylix.API.RouterTest do
 
       response = Jason.decode!(conn.resp_body)
       assert response["status"] == "success"
-      assert response["data"] == [%{"var1" => "value1"}]
+      assert response["data"] == [%{"activity" => "activity:plot"}]
     end
 
     test "returns 400 on query error" do

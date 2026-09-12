@@ -41,7 +41,6 @@ defmodule Kylix.Application do
     [
       persist_child(config),
       {Kylix.BlockchainServer, [validators: validators, config_dir: config.validators_dir]},
-      {Kylix.Server.TransactionQueue, []},
       if Mix.env() != :test do
         {Kylix.API.Server, [port: config.api_port]}
       end

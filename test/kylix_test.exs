@@ -27,7 +27,7 @@ defmodule KylixTest do
       assert {:ok, tx_id} =
                Kylix.add_transaction(subject, predicate, object, "member_attester", signature)
 
-      assert String.starts_with?(tx_id, "tx")
+      assert is_binary(tx_id)
     end
 
     test "signature still verifies after accept-time moves", %{
@@ -83,81 +83,7 @@ defmodule KylixTest do
       assert {:ok, tx_id} =
                Kylix.add_transaction(unique_subject, "predicate", "object", attester, signature)
 
-      assert String.starts_with?(tx_id, "tx")
-    end
-  end
-
-  describe "add transaction asynchronously" do
-    test "add transaction asynchronously", %{private_key: private_key, attester: attester} do
-      unique_subject = "subject-async-#{System.monotonic_time()}"
-      tx_hash = hash_transaction(unique_subject, "predicate", "object", attester)
-      signature = sign(tx_hash, private_key)
-
-      assert {:ok, ref} =
-               Kylix.add_transaction_async(
-                 unique_subject,
-                 "predicate",
-                 "object",
-                 attester,
-                 signature
-               )
-
-      assert is_reference(ref)
-    end
-
-    test "async submit is accepted" do
-      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
-      member = Kylix.Test.Attester.seed("async_attester", public_key)
-
-      subject = "subject-async-attester"
-      predicate = "predicate"
-      object = "object"
-      tx_hash = hash_transaction(subject, predicate, object, member)
-      signature = sign(tx_hash, private_key)
-
-      assert {:ok, ref} =
-               Kylix.add_transaction_async(subject, predicate, object, member, signature)
-
-      assert {:ok, tx_id} = wait_for_accept(ref)
-      assert String.starts_with?(tx_id, "tx")
-    end
-
-    test "two async submits from the same member both accept" do
-      {public_key, private_key} = Kylix.Test.Attester.generate_keys()
-      member = Kylix.Test.Attester.seed("async_repeat_attester", public_key)
-
-      first_subject = "subject-async-repeat-1"
-      second_subject = "subject-async-repeat-2"
-      predicate = "predicate"
-      first_object = "object-a"
-      second_object = "object-b"
-
-      first_hash = hash_transaction(first_subject, predicate, first_object, member)
-      second_hash = hash_transaction(second_subject, predicate, second_object, member)
-
-      assert {:ok, ref1} =
-               Kylix.add_transaction_async(
-                 first_subject,
-                 predicate,
-                 first_object,
-                 member,
-                 sign(first_hash, private_key)
-               )
-
-      assert {:ok, ref2} =
-               Kylix.add_transaction_async(
-                 second_subject,
-                 predicate,
-                 second_object,
-                 member,
-                 sign(second_hash, private_key)
-               )
-
-      assert {:ok, tx1} = wait_for_accept(ref1)
-      assert {:ok, tx2} = wait_for_accept(ref2)
-      assert String.starts_with?(tx1, "tx")
-      assert String.starts_with?(tx2, "tx")
-      assert tx1 != tx2
+      assert is_binary(tx_id)
     end
   end
 
@@ -168,21 +94,6 @@ defmodule KylixTest do
 
       assert {:error, :unknown_validator} =
                Kylix.add_transaction("subject", "predicate", "object", "unknown_agent", signature)
-    end
-  end
-
-  describe "get queue status" do
-    test "returns expected map keys" do
-      status = Kylix.get_queue_status()
-      assert is_map(status)
-      assert Map.has_key?(status, :queue_length)
-      assert Map.has_key?(status, :processing)
-      assert Map.has_key?(status, :batch_size)
-      assert Map.has_key?(status, :processing_interval)
-      assert Map.has_key?(status, :stats)
-      assert Map.has_key?(status, :transaction_count)
-      assert Map.has_key?(status, :pending_count)
-      assert Map.has_key?(status, :completed_count)
     end
   end
 
@@ -200,7 +111,7 @@ defmodule KylixTest do
       assert {:ok, tx_id} =
                Kylix.add_transaction(subject, predicate, object, vouched, signature)
 
-      assert String.starts_with?(tx_id, "tx")
+      assert is_binary(tx_id)
     end
 
     test "get_validators lists the Validator add_validator wrote" do
@@ -248,29 +159,6 @@ defmodule KylixTest do
                  member,
                  second_signature
                )
-    end
-  end
-
-  defp wait_for_accept(ref, timeout_ms \\ 2000) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    do_wait_for_accept(ref, deadline)
-  end
-
-  defp do_wait_for_accept(ref, deadline) do
-    case Kylix.Server.TransactionQueue.get_transaction_status(ref) do
-      %{result: {:ok, tx_id}} ->
-        {:ok, tx_id}
-
-      %{result: {:error, reason}} ->
-        {:error, reason}
-
-      _ ->
-        if System.monotonic_time(:millisecond) >= deadline do
-          flunk("Transaction was not accepted before timeout")
-        else
-          Process.sleep(50)
-          do_wait_for_accept(ref, deadline)
-        end
     end
   end
 end

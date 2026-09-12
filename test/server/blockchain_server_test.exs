@@ -31,7 +31,7 @@ defmodule Kylix.BlockchainServerTest do
                  signature
                )
 
-      assert String.starts_with?(tx_id, "tx")
+      assert is_binary(tx_id)
     end
 
     test "add_transaction with invalid validator", %{private_key: private_key} do

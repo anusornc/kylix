@@ -1,6 +1,6 @@
 defmodule Kylix.API.Dashboard do
   @moduledoc """
-  Simple HTML dashboard for Kylix blockchain explorer
+  HTML dashboard: accept a Transaction and ask a lineage question.
   """
 
   require EEx

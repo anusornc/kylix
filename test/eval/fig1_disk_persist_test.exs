@@ -53,5 +53,35 @@ defmodule Kylix.Eval.Fig1DiskPersistTest do
     assert {:error, :duplicate_transaction} =
              Kylix.add_transaction(subject, predicate, object, attester, signature)
   end
-end
 
+  test "new statement after disk restart does not clobber Fig1" do
+    {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+    attester = Kylix.Test.Attester.seed("fig1_new_attester", public_key)
+
+    subject = "entity:fig2"
+    predicate = "prov:wasAttributedTo"
+    object = "agent:bob"
+
+    signature =
+      Kylix.Test.Attester.signature(subject, predicate, object, attester, private_key)
+
+    assert {:ok, _id} = Kylix.add_transaction(subject, predicate, object, attester, signature)
+
+    for name <- Kylix.Eval.Suite.names() do
+      query = Kylix.Eval.Suite.query(name)
+      expected = Kylix.Eval.Suite.expected(name)
+      assert {:ok, results} = SparqlEngine.execute(query)
+      assert results == expected
+    end
+
+    query = """
+    SELECT ?agent
+    WHERE { "entity:fig2" prov:wasAttributedTo ?agent . }
+    """
+
+    assert {:ok, [%{"agent" => "agent:bob"}]} = SparqlEngine.execute(query)
+
+    assert {:error, :duplicate_transaction} =
+             Kylix.add_transaction(subject, predicate, object, attester, signature)
+  end
+end

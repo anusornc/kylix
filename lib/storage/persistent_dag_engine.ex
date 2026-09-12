@@ -12,6 +12,8 @@ defmodule Kylix.Storage.PersistentDAGEngine do
     GenServer.start_link(__MODULE__, [db_path: db_path], name: __MODULE__)
   end
 
+  def store(data), do: GenServer.call(__MODULE__, {:store, data})
+
   def add_node(node_id, data), do: GenServer.call(__MODULE__, {:add_node, node_id, data})
 
   def add_edge(from_id, to_id, label),
@@ -115,6 +117,20 @@ defmodule Kylix.Storage.PersistentDAGEngine do
   end
 
   @impl true
+  def handle_call({:store, data}, _from, state) do
+    unless is_map(data) do
+      {:reply, {:error, :invalid_data}, state}
+    else
+      id = Kylix.Storage.unused_id(Map.keys(state.nodes))
+
+      case write_node(id, data, state) do
+        {:ok, new_state} -> {:reply, {:ok, id}, new_state}
+        {:error, reason} -> {:reply, {:error, reason}, state}
+      end
+    end
+  end
+
+  @impl true
   def handle_call({:add_node, node_id, data}, _from, state) do
     Logger.info("Adding node #{node_id} with data: #{inspect(data)}")
 
@@ -122,26 +138,10 @@ defmodule Kylix.Storage.PersistentDAGEngine do
       Logger.error("Data for node #{node_id} is not a map: #{inspect(data)}")
       {:reply, {:error, :invalid_data}, state}
     else
-      node_path = Path.join([state.db_path, @nodes_dir, "#{node_id}.bin"])
-      serialized_data = :erlang.term_to_binary(data)
-      :ok = File.write!(node_path, serialized_data)
-
-      new_metadata = %{
-        state.metadata
-        | node_count: state.metadata.node_count + 1,
-          last_node_id: node_id
-      }
-
-      save_metadata(state.db_path, new_metadata)
-
-      new_state = %{
-        state
-        | metadata: new_metadata,
-          nodes: Map.put(state.nodes, node_id, data)
-      }
-
-      Logger.info("Node #{node_id} persisted to disk")
-      {:reply, :ok, new_state}
+      case write_node(node_id, data, state) do
+        {:ok, new_state} -> {:reply, :ok, new_state}
+        {:error, reason} -> {:reply, {:error, reason}, state}
+      end
     end
   end
 
@@ -194,5 +194,33 @@ defmodule Kylix.Storage.PersistentDAGEngine do
 
     Logger.info("Query results: #{inspect(results)}")
     {:reply, {:ok, results}, state}
+  end
+
+  defp write_node(node_id, data, state) do
+    node_path = Path.join([state.db_path, @nodes_dir, "#{node_id}.bin"])
+
+    if Map.has_key?(state.nodes, node_id) or File.exists?(node_path) do
+      {:error, :id_collision}
+    else
+      serialized_data = :erlang.term_to_binary(data)
+      :ok = File.write!(node_path, serialized_data)
+
+      new_metadata = %{
+        state.metadata
+        | node_count: state.metadata.node_count + 1,
+          last_node_id: node_id
+      }
+
+      save_metadata(state.db_path, new_metadata)
+
+      new_state = %{
+        state
+        | metadata: new_metadata,
+          nodes: Map.put(state.nodes, node_id, data)
+      }
+
+      Logger.info("Node #{node_id} persisted to disk")
+      {:ok, new_state}
+    end
   end
 end

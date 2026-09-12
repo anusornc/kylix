@@ -10,6 +10,20 @@ defmodule Kylix.Storage do
   end
 
   @doc false
+  def store(data), do: adapter_module().store(data)
+
+  @doc false
+  def unused_id(keys) do
+    set = MapSet.new(keys)
+
+    Stream.iterate(1, &(&1 + 1))
+    |> Enum.find_value(fn n ->
+      id = Integer.to_string(n)
+      if MapSet.member?(set, id), do: nil, else: id
+    end)
+  end
+
+  @doc false
   def add_node(node_id, data), do: adapter_module().add_node(node_id, data)
 
   @doc false
@@ -18,4 +32,3 @@ defmodule Kylix.Storage do
   @doc false
   def query(pattern), do: adapter_module().query(pattern)
 end
-

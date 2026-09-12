@@ -13,18 +13,13 @@ defmodule Kylix.Storage.DAGEngine do
   end
 
   # เพิ่มโหนดใหม่เข้าไปในกราฟ โดยระบุ node_id และข้อมูล
+  def store(data), do: GenServer.call(__MODULE__, {:store, data})
+
   def add_node(node_id, data), do: GenServer.call(__MODULE__, {:add_node, node_id, data})
 
-  # เพิ่มเส้นเชื่อมระหว่างโหนด from_id ไปยัง to_id พร้อมกำหนดป้ายกำกับ
   def add_edge(from_id, to_id, label),
     do: GenServer.call(__MODULE__, {:add_edge, from_id, to_id, label})
 
-  # ดึงข้อมูลของโหนดตาม node_id ที่ระบุ
-  def get_node(node_id), do: GenServer.call(__MODULE__, {:get_node, node_id})
-  # ดึงข้อมูลของโหนดทั้งหมดในกราฟ
-  def get_all_nodes(), do: GenServer.call(__MODULE__, :get_all_nodes)
-
-  # ค้นหาโหนดตามรูปแบบที่กำหนด (pattern matching)
   def query(pattern), do: GenServer.call(__MODULE__, {:query, pattern})
 
   @impl true
@@ -42,6 +37,23 @@ defmodule Kylix.Storage.DAGEngine do
   end
 
   @impl true
+  def handle_call({:store, data}, _from, state) do
+    unless is_map(data) do
+      {:reply, {:error, :invalid_data}, state}
+    else
+      keys = :ets.tab2list(@table) |> Enum.map(&elem(&1, 0))
+      id = Kylix.Storage.unused_id(keys)
+
+      if :ets.member(@table, id) do
+        {:reply, {:error, :id_collision}, state}
+      else
+        insert_node(id, data)
+        {:reply, {:ok, id}, state}
+      end
+    end
+  end
+
+  @impl true
   def handle_call({:add_node, node_id, data}, _from, state) do
     require Logger
     Logger.info("Adding node #{node_id} with data: #{inspect(data)}")
@@ -50,21 +62,7 @@ defmodule Kylix.Storage.DAGEngine do
       Logger.error("Data for node #{node_id} is not a map: #{inspect(data)}")
       {:reply, {:error, :invalid_data}, state}
     else
-      :ets.insert(@table, {node_id, data})
-
-      # Update indexes
-      if Map.has_key?(data, :subject) do
-        :ets.insert(:subject_index, {data.subject, node_id})
-      end
-
-      if Map.has_key?(data, :predicate) do
-        :ets.insert(:predicate_index, {data.predicate, node_id})
-      end
-
-      if Map.has_key?(data, :object) do
-        :ets.insert(:object_index, {data.object, node_id})
-      end
-
+      insert_node(node_id, data)
       Logger.info("After insert, node #{node_id} data: #{inspect(:ets.lookup(@table, node_id))}")
       {:reply, :ok, state}
     end
@@ -78,22 +76,6 @@ defmodule Kylix.Storage.DAGEngine do
     else
       {:reply, {:error, :node_not_found}, state}
     end
-  end
-
-  @impl true
-  def handle_call({:get_node, node_id}, _from, state) do
-    case :ets.lookup(@table, node_id) do
-      [{^node_id, data}] -> {:reply, {:ok, data}, state}
-      [] -> {:reply, :not_found, state}
-    end
-  end
-
-  @impl true
-  def handle_call(:get_all_nodes, _from, state) do
-    nodes = :ets.tab2list(@table)
-    require Logger
-    Logger.info("All nodes in DAG: #{inspect(nodes)}")
-    {:reply, nodes, state}
   end
 
   @impl true
@@ -173,6 +155,22 @@ defmodule Kylix.Storage.DAGEngine do
 
     Logger.info("Query results: #{inspect(results)}")
     {:reply, {:ok, results}, state}
+  end
+
+  defp insert_node(node_id, data) do
+    :ets.insert(@table, {node_id, data})
+
+    if Map.has_key?(data, :subject) do
+      :ets.insert(:subject_index, {data.subject, node_id})
+    end
+
+    if Map.has_key?(data, :predicate) do
+      :ets.insert(:predicate_index, {data.predicate, node_id})
+    end
+
+    if Map.has_key?(data, :object) do
+      :ets.insert(:object_index, {data.object, node_id})
+    end
   end
 
   @impl true

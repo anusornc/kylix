@@ -34,7 +34,7 @@ defmodule Kylix.API.Router do
     end
   end
 
-  # GET /query - Execute SPARQL-like queries
+  # GET /query - Lineage suite questions at execute/1
   get "/query" do
     query_string = conn.params["q"]
 

@@ -19,5 +19,14 @@ defmodule Kylix.API.TpsProductGoneTest do
 
     assert html =~ "Submit Transaction"
     assert html =~ "Run Query"
+
+    refute html =~ "SPARQL"
+    refute html =~ "SPARQL query"
+    refute html =~ "blockchain explorer"
+    refute html =~ "valid_sig"
+  end
+
+  test "AuthFlow HTML is gone" do
+    refute File.exists?(Path.expand("lib/frontend/index.html"))
   end
 end
