@@ -22,7 +22,7 @@ defmodule Kylix.API.TpsProductGoneTest do
 
     refute html =~ "SPARQL"
     refute html =~ "SPARQL query"
-    refute html =~ "blockchain explorer"
+    refute html =~ ~r/blockchain explorer/i
     refute html =~ "valid_sig"
   end
 

@@ -62,9 +62,13 @@ defmodule Kylix.Storage.DAGEngine do
       Logger.error("Data for node #{node_id} is not a map: #{inspect(data)}")
       {:reply, {:error, :invalid_data}, state}
     else
-      insert_node(node_id, data)
-      Logger.info("After insert, node #{node_id} data: #{inspect(:ets.lookup(@table, node_id))}")
-      {:reply, :ok, state}
+      if :ets.member(@table, node_id) do
+        {:reply, {:error, :id_collision}, state}
+      else
+        insert_node(node_id, data)
+        Logger.info("After insert, node #{node_id} data: #{inspect(:ets.lookup(@table, node_id))}")
+        {:reply, :ok, state}
+      end
     end
   end
 
