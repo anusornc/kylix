@@ -38,4 +38,20 @@ defmodule Kylix.Eval.Fig1DiskPersistTest do
       assert results == expected
     end
   end
+
+  test "duplicate Fig1 statement after disk restart is rejected" do
+    {public_key, private_key} = Kylix.Test.Attester.generate_keys()
+    attester = Kylix.Test.Attester.seed("fig1_dup_attester", public_key)
+
+    subject = "entity:fig1"
+    predicate = "prov:wasGeneratedBy"
+    object = "activity:plot"
+
+    signature =
+      Kylix.Test.Attester.signature(subject, predicate, object, attester, private_key)
+
+    assert {:error, :duplicate_transaction} =
+             Kylix.add_transaction(subject, predicate, object, attester, signature)
+  end
 end
+
