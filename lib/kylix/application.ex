@@ -27,13 +27,13 @@ defmodule Kylix.Application do
   end
 
   defp load_validators(validators_dir) do
-    if Mix.env() == :test or !File.dir?(validators_dir) do
-      []
-    else
+    if File.dir?(validators_dir) do
       validators_dir
       |> File.ls!()
       |> Enum.filter(&String.ends_with?(&1, ".pub"))
       |> Enum.map(&Path.rootname/1)
+    else
+      []
     end
   end
 

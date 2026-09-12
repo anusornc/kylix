@@ -97,10 +97,10 @@ defmodule Kylix.BlockchainServer do
     validators = Keyword.get(opts, :validators, [])
     config_dir = Keyword.get(opts, :config_dir, @config_dir)
 
-    # If we're in test mode, use hardcoded test validators
+    # If we're in test mode, keep the Mix.env plant and also take start opts.
     final_validators =
       if Mix.env() == :test do
-        @test_validators
+        Enum.uniq(validators ++ @test_validators)
       else
         validators
       end

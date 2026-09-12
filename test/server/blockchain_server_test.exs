@@ -99,6 +99,11 @@ defmodule Kylix.BlockchainServerTest do
   end
 
   describe "validator operations" do
+    test "boot roster includes file-backed integration_validator" do
+      validators = BlockchainServer.get_validators()
+      assert "integration_validator" in validators
+    end
+
     test "get_validators returns list of validators" do
       validators = BlockchainServer.get_validators()
       assert is_list(validators)
