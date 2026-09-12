@@ -59,14 +59,6 @@ defmodule Kylix.API.Router do
     send_json_resp(conn, 200, %{status: "success", data: validators})
   end
 
-  # GET /metrics - Fetch leftover benchmark fields
-  get "/metrics" do
-    Logger.info("Fetching performance metrics")
-
-    metrics = %{benchmarks: load_benchmark_data()}
-    send_json_resp(conn, 200, %{status: "success", data: metrics})
-  end
-
   # POST /validators - Add a new validator
   post "/validators" do
     with %{"validator_id" => validator_id, "pubkey" => pubkey, "known_by" => known_by} <-
@@ -105,81 +97,5 @@ defmodule Kylix.API.Router do
     conn
     |> put_resp_content_type("application/json")
     |> send_resp(status, Jason.encode!(data))
-  end
-
-  # Load transaction benchmark data from JSON files
-  defp load_benchmark_data do
-    benchmark_dir = "data/benchmark"
-
-    case fetch_benchmark_files(benchmark_dir) do
-      [] ->
-        %{results: [], latest: nil}
-
-      files ->
-        latest_file = hd(files)
-        latest_path = Path.join(benchmark_dir, latest_file)
-        latest_data = read_and_decode_json(latest_path) || %{}
-
-        all_results = load_time_series_data(benchmark_dir, files)
-
-        %{
-          results: all_results,
-          latest: latest_data
-        }
-    end
-  end
-
-  defp fetch_benchmark_files(dir) do
-    if File.exists?(dir) && File.dir?(dir) do
-      File.ls!(dir)
-      |> Enum.filter(&String.ends_with?(&1, ".json"))
-      |> Enum.sort()
-      |> Enum.reverse()
-      |> Enum.take(5)
-    else
-      []
-    end
-  end
-
-  defp read_and_decode_json(path) do
-    with {:ok, content} <- File.read(path),
-         {:ok, parsed} <- Jason.decode(content) do
-      parsed
-    else
-      _ -> nil
-    end
-  end
-
-  defp load_time_series_data(dir, files) do
-    Task.async_stream(
-      files,
-      fn file ->
-        path = Path.join(dir, file)
-        timestamp = extract_timestamp_from_filename(file)
-
-        case read_and_decode_json(path) do
-          nil -> nil
-          parsed -> Map.put(parsed, "timestamp", timestamp)
-        end
-      end,
-      max_concurrency: System.schedulers_online()
-    )
-    |> Stream.map(fn {:ok, res} -> res end)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  # Extract timestamp from filename like "benchmark_2023-05-25_12-30-45.json"
-  defp extract_timestamp_from_filename(filename) do
-    case Regex.run(~r/benchmark_(.+)\.json$/, filename) do
-      [_, timestamp_str] ->
-        # Convert to friendlier format if needed
-        timestamp_str
-        |> String.replace("_", " ")
-        |> String.replace("-", ":")
-
-      _ ->
-        # If no match, use the filename without extension
-        Path.rootname(filename)
-    end
   end
 end

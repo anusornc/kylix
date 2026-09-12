@@ -179,20 +179,16 @@ defmodule Kylix.API.RouterTest do
   end
 
   describe "GET /metrics" do
-    test "returns leftover benchmark fields without a graph dump" do
+    test "is not a leftover benchmark dump" do
       conn = conn(:get, "/metrics")
       conn = Router.call(conn, @opts)
 
       assert conn.state == :sent
-      assert conn.status == 200
+      assert conn.status == 404
 
       response = Jason.decode!(conn.resp_body)
-      assert response["status"] == "success"
-
-      metrics = response["data"]
-      refute Map.has_key?(metrics, "storage")
-      assert metrics["benchmarks"]["results"] == []
-      assert metrics["benchmarks"]["latest"] == nil
+      assert response["status"] == "error"
+      assert response["message"] == "Route not found"
     end
   end
 
