@@ -23,7 +23,7 @@ defmodule Kylix.Test.Attester do
     {public_key, private_key}
   end
 
-  def seed(id, public_key, known_by \\ "agent1") do
+  def seed(id, public_key, known_by \\ "integration_validator") do
     {:ok, ^id} = Kylix.add_validator(id, public_key, known_by)
     ExUnit.Callbacks.on_exit(fn -> File.rm(Path.join(@pub_dir, "#{id}.pub")) end)
     id

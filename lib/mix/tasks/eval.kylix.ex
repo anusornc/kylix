@@ -26,7 +26,7 @@ defmodule Mix.Tasks.Eval.Kylix do
     {:ok, _} = Application.ensure_all_started(:kylix)
 
     {:ok, {public_key, private_key}} = Kylix.Auth.SignatureVerifier.generate_test_key_pair()
-    {:ok, attester} = Kylix.add_validator("fig1_attester", public_key, "agent1")
+    {:ok, attester} = Kylix.add_validator("fig1_attester", public_key, "integration_validator")
 
     result =
       case Kylix.Eval.Runner.run(validator_id: attester, private_key: private_key) do

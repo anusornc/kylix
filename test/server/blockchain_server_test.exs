@@ -115,7 +115,7 @@ defmodule Kylix.BlockchainServerTest do
       on_exit(fn -> File.rm("config/validators/added_agent.pub") end)
 
       assert {:ok, "added_agent"} =
-               BlockchainServer.add_validator("added_agent", "pubkey123", "agent1")
+               BlockchainServer.add_validator("added_agent", "pubkey123", "integration_validator")
 
       validators = BlockchainServer.get_validators()
       assert "added_agent" in validators
