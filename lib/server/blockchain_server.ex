@@ -3,8 +3,6 @@ defmodule Kylix.BlockchainServer do
   require Logger
 
   @config_dir "config/validators"
-  # Hardcode test validators
-  @test_validators ["agent1", "agent2"]
 
   # Start the Blockchain Server with given options
   # The server will manage transactions and validator information
@@ -97,15 +95,6 @@ defmodule Kylix.BlockchainServer do
     validators = Keyword.get(opts, :validators, [])
     config_dir = Keyword.get(opts, :config_dir, @config_dir)
 
-    # If we're in test mode, keep the Mix.env plant and also take start opts.
-    final_validators =
-      if Mix.env() == :test do
-        Enum.uniq(validators ++ @test_validators)
-      else
-        validators
-      end
-
-    # Ensure config directory exists
     File.mkdir_p!(config_dir)
 
     public_keys = Kylix.Auth.SignatureVerifier.load_public_keys(config_dir)
@@ -113,8 +102,8 @@ defmodule Kylix.BlockchainServer do
     {:ok,
      %{
        tx_count: 0,
-       validators: final_validators,
-       validator_set: MapSet.new(final_validators),
+       validators: validators,
+       validator_set: MapSet.new(validators),
        public_keys: public_keys,
        last_block_time: DateTime.utc_now()
      }}
