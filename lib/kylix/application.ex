@@ -14,8 +14,6 @@ defmodule Kylix.Application do
   defp load_config do
     %{
       db_path: Application.get_env(:kylix, :db_path, "data/dag_storage"),
-      port: Application.get_env(:kylix, :port, 4040),
-      node_id: Application.get_env(:kylix, :node_id, "kylix-node"),
       validators_dir: Application.get_env(:kylix, :validators_dir, "config/validators"),
       api_port: Application.get_env(:kylix, :api_port, 4000)
     }
@@ -43,7 +41,6 @@ defmodule Kylix.Application do
     [
       persist_child(config),
       {Kylix.BlockchainServer, [validators: validators, config_dir: config.validators_dir]},
-      {Kylix.Network.ValidatorNetwork, [port: config.port, node_id: config.node_id]},
       {Kylix.Server.TransactionQueue, []},
       if Mix.env() != :test do
         {Kylix.API.Server, [port: config.api_port]}
